@@ -1,7 +1,7 @@
 # 🤖 拼多多智能客服系统
 
 <div align="center">
-  <img src="docs/配置.png" alt="系统配置界面" width="600">
+  <img src="docs/设置.png" alt="系统配置界面" width="600">
   <p><em>拼多多智能客服系统 - 提升客服效率的智能化解决方案</em></p>
 </div>
 
@@ -12,7 +12,7 @@
 ## ✨ 主要功能
 
 ### 🔐 账号管理
-- 单商家账号管理
+- 商家账号管理（支持多账号）
 - 自动登录获取cookies
 - 账号状态实时监控
 
@@ -25,6 +25,11 @@
 - 实时消息监控与自动回复
 - 集成AI (Coze API) 生成智能回复内容
 - 支持自定义回复模板和关键词识别
+
+<div align="center">
+  <img src="docs/自动回复.png" alt="自动回复界面" width="500">
+  <p><em>智能回复 - 自动回复客户消息</em></p>
+</div>
 
 ### 🔄 智能转接系统
 - 基于关键词智能识别客户需求
@@ -42,14 +47,14 @@
 - 详细的操作记录和统计
 
 <div align="center">
-  <img src="docs/日志界面.png" alt="日志界面" width="500">
+  <img src="docs/日志管理.png" alt="日志界面" width="500">
   <p><em>日志界面 - 实时监控系统运行状态</em></p>
 </div>
 
 ## 🚀 快速开始
 
 ### 环境要求
-- Python 3.8+
+- Python 3.11+
 - Windows 10/11 (推荐)
 - 网络连接稳定
 
@@ -73,32 +78,15 @@
 
 3. **安装浏览器驱动**
    ```bash
-   playwright install chrome
+   uv run playwright install chrome
    ```
 
-4. **配置API密钥**
-   
-   在 `config/config.json` 文件中设置您的 Coze API 配置：
-   ```bash
-   cp config-template.json config.json
-   ```      
-
-   ```json
-   {
-       "coze_token": "pat_4NVl6fHb7290nP********",
-       "coze_bot_id": "74540****"
-   }
-   ```
 
 ## 📱 使用指南
 
 ### 启动系统
 ```bash
 python main.py
-```
-或者直接运行：
-```bash
-./拼多多AI客服.bat
 ```
 
 ### 配置流程
@@ -111,9 +99,17 @@ python main.py
    - 配置需要人工转接的关键词
    - 设置自动回复的话术模板
 
-3. **启动监控**
-   - 开始实时监控客户消息
+3. **配置Coze API**
+   - 在设置界面配置Coze API
+   - 设置Coze API
+
+4. **启动系统**
+   - 在账号管理界面启动系统
    - 系统将根据配置自动处理消息
+
+5. **监控日志**
+   - 在日志管理界面查看系统运行日志
+
 
 ## 🛠️ 技术架构
 
@@ -127,14 +123,48 @@ python main.py
 
 ```
 Customer-Agent/
-├── AI/                 # AI相关模块
-├── PDD/                # 拼多多平台接口
-├── config/             # 配置文件
-├── docs/               # 文档和截图
-├── gui/                # 图形界面
+├── Agent/              # AI智能代理模块
+│   ├── bot_factory.py      # 机器人工厂
+│   ├── bot.py             # 机器人基类
+│   └── CozeAgent/         # Coze AI代理
+│       ├── bot.py
+│       ├── conversation_manager.py
+│       └── user_session.py
+├── Channel/            # 渠道接口模块
+│   ├── channel.py         # 渠道基类
+│   └── pinduoduo/        # 拼多多渠道
+│       ├── pdd_chnnel.py
+│       ├── pdd_login.py
+│       ├── pdd_message.py
+│       └── utils/        # 拼多多API工具
+├── Message/            # 消息处理模块
+│   ├── message_consumer.py   # 消息消费者
+│   ├── message_handler.py    # 消息处理器
+│   ├── message_queue.py      # 消息队列
+│   └── message.py           # 消息基类
+├── bridge/             # 桥接模块
+│   ├── bridge.py          # 桥接器
+│   ├── context.py         # 上下文管理
+│   └── reply.py           # 回复处理
+├── database/           # 数据库模块
+│   ├── db_manager.py      # 数据库管理器
+│   └── models.py          # 数据模型
+├── ui/                 # 用户界面模块
+│   ├── main_ui.py         # 主界面
+│   ├── auto_reply_ui.py   # 自动回复界面
+│   ├── keyword_ui.py      # 关键词管理界面
+│   ├── log_ui.py          # 日志界面
+│   ├── setting_ui.py      # 设置界面
+│   └── user_ui.py         # 用户管理界面
 ├── utils/              # 工具函数
-├── main.py             # 主程序入口
-└── requirements.txt    # 依赖清单
+│   └── logger.py          # 日志工具
+├── docs/               # 文档和截图
+├── icon/               # 图标资源
+├── logs/               # 日志文件
+├── app.py              # 应用程序入口
+├── config.py           # 配置管理
+├── pyproject.toml      # 项目配置
+└── uv.lock             # 依赖锁定文件
 ```
 
 ## 🤝 贡献指南
@@ -155,7 +185,20 @@ Customer-Agent/
 
 - **问题反馈**: [GitHub Issues](https://github.com/JC0v0/PDD-customer-bot/issues)
 - **功能建议**: 欢迎通过 Issues 提出您的想法
-- **技术交流**: 点击链接加入腾讯频道【Customer-Agent】：https://pd.qq.com/s/45wvtz4g6?b=5
+- **技术交流**: 
+<div align="center">
+  <img src="icon/Customer-Agent-qr.png" alt="频道二维码" width="200">
+  <p><em>频道二维码</em></p>
+</div>
+
+## 💖 支持项目
+
+如果这个项目对您有帮助，您可以通过以下方式支持我们：
+
+<div align="center">
+  <img src="docs/赞赏码.png" alt="赞赏码" width="200">
+  <p><em>您的支持是我们前进的动力</em></p>
+</div>
 
 ---
 
