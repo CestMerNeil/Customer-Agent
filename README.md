@@ -86,7 +86,7 @@
 
 ### 启动系统
 ```bash
-python main.py
+python app.py
 ```
 
 ### 配置流程
