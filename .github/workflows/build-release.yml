@@ -1,0 +1,333 @@
+name: Build Multi-Platform Release
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      create_release:
+        description: '创建 GitHub Release'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  APP_NAME: "拼多多智能客服系统"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build-windows:
+    name: Build Windows Application
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install System Dependencies
+      run: |
+        # 安装 Visual C++ 构建工具（某些包可能需要）
+        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
+      shell: powershell
+      continue-on-error: true
+    
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+        pip install pyinstaller>=6.0.0
+    
+    - name: Install Playwright Browsers
+      run: |
+        playwright install chrome --with-deps
+    
+    - name: Prepare Build Environment
+      run: |
+        # 创建图标目录（如果不存在）
+        if (!(Test-Path "icon")) {
+          New-Item -ItemType Directory -Force -Path "icon"
+        }
+        
+        # 检查配置文件
+        if (!(Test-Path "config.json")) {
+          echo '{"coze_api_base": "https://api.coze.cn", "coze_token": "", "coze_bot_id": "", "bot_type": "coze"}' | Out-File -FilePath "config.json" -Encoding UTF8
+        }
+      shell: powershell
+    
+    - name: Build Windows Executable
+      run: |
+        pyinstaller --clean --noconfirm `
+          --onefile `
+          --windowed `
+          --name="${{ env.APP_NAME }}" `
+          --add-data="icon;icon" `
+          --add-data="config.json;." `
+          --add-data="database;database" `
+          --hidden-import="PyQt6.QtCore" `
+          --hidden-import="PyQt6.QtWidgets" `
+          --hidden-import="PyQt6.QtGui" `
+          --hidden-import="qfluentwidgets" `
+          --hidden-import="playwright" `
+          --hidden-import="Agent.CozeAgent.bot" `
+          --hidden-import="Agent.DifyAgent.bot" `
+          --hidden-import="Channel.pinduoduo.pdd_channel" `
+          --collect-all="qfluentwidgets" `
+          --collect-all="playwright" `
+          app.py
+      shell: powershell
+    
+    - name: Test Windows Executable
+      run: |
+        if (Test-Path "dist/${{ env.APP_NAME }}.exe") {
+          Write-Host "✅ Windows 可执行文件构建成功"
+          $fileSize = (Get-Item "dist/${{ env.APP_NAME }}.exe").Length / 1MB
+          Write-Host "📦 文件大小: $([math]::Round($fileSize, 2)) MB"
+        } else {
+          Write-Host "❌ Windows 可执行文件构建失败"
+          exit 1
+        }
+      shell: powershell
+    
+    - name: Upload Windows Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-x64-executable
+        path: dist/${{ env.APP_NAME }}.exe
+        retention-days: 30
+
+  build-macos:
+    name: Build macOS Application (Apple Silicon)
+    runs-on: macos-14  # Apple Silicon runner
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install System Dependencies
+      run: |
+        # 安装 Homebrew 依赖（如果需要）
+        brew update
+        brew install --cask google-chrome  # Playwright 需要
+    
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+        pip install pyinstaller>=6.0.0
+    
+    - name: Install Playwright Browsers
+      run: |
+        playwright install chrome --with-deps
+    
+    - name: Prepare Build Environment
+      run: |
+        # 创建必要的目录和文件
+        mkdir -p icon database
+        
+        # 创建默认配置文件（如果不存在）
+        if [ ! -f "config.json" ]; then
+          echo '{"coze_api_base": "https://api.coze.cn", "coze_token": "", "coze_bot_id": "", "bot_type": "coze"}' > config.json
+        fi
+    
+    - name: Build macOS Application
+      run: |
+        pyinstaller --clean --noconfirm \
+          --onefile \
+          --windowed \
+          --name="${{ env.APP_NAME }}" \
+          --add-data="icon:icon" \
+          --add-data="config.json:." \
+          --add-data="database:database" \
+          --hidden-import="PyQt6.QtCore" \
+          --hidden-import="PyQt6.QtWidgets" \
+          --hidden-import="PyQt6.QtGui" \
+          --hidden-import="qfluentwidgets" \
+          --hidden-import="playwright" \
+          --hidden-import="Agent.CozeAgent.bot" \
+          --hidden-import="Agent.DifyAgent.bot" \
+          --hidden-import="Channel.pinduoduo.pdd_channel" \
+          --collect-all="qfluentwidgets" \
+          --collect-all="playwright" \
+          --target-arch="arm64" \
+          app.py
+    
+    - name: Create macOS App Bundle
+      run: |
+        # 创建 .app 包结构
+        APP_DIR="dist/${{ env.APP_NAME }}.app"
+        mkdir -p "$APP_DIR/Contents/MacOS"
+        mkdir -p "$APP_DIR/Contents/Resources"
+        
+        # 移动可执行文件
+        mv "dist/${{ env.APP_NAME }}" "$APP_DIR/Contents/MacOS/"
+        
+        # 创建 Info.plist
+        cat > "$APP_DIR/Contents/Info.plist" << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>${{ env.APP_NAME }}</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.jc0v0.pdd-customer-agent</string>
+            <key>CFBundleName</key>
+            <string>${{ env.APP_NAME }}</string>
+            <key>CFBundleVersion</key>
+            <string>1.0.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>LSRequiresNativeExecution</key>
+            <true/>
+        </dict>
+        </plist>
+        EOF
+        
+        # 创建 DMG 文件
+        hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "$APP_DIR" -ov -format UDZO "dist/${{ env.APP_NAME }}-macOS-arm64.dmg"
+    
+    - name: Test macOS Application
+      run: |
+        if [ -f "dist/${{ env.APP_NAME }}.app/Contents/MacOS/${{ env.APP_NAME }}" ]; then
+          echo "✅ macOS 应用构建成功"
+          file_size=$(du -m "dist/${{ env.APP_NAME }}-macOS-arm64.dmg" | cut -f1)
+          echo "📦 DMG 文件大小: ${file_size} MB"
+        else
+          echo "❌ macOS 应用构建失败"
+          exit 1
+        fi
+    
+    - name: Upload macOS Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-arm64-dmg
+        path: dist/${{ env.APP_NAME }}-macOS-arm64.dmg
+        retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-x64-executable
+        path: ./artifacts/windows/
+    
+    - name: Download macOS Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-arm64-dmg
+        path: ./artifacts/macos/
+    
+    - name: Prepare Release Assets
+      run: |
+        mkdir -p release-assets
+        
+        # 重命名文件以包含平台信息
+        cp "./artifacts/windows/${{ env.APP_NAME }}.exe" "./release-assets/${{ env.APP_NAME }}-Windows-x64.exe"
+        cp "./artifacts/macos/${{ env.APP_NAME }}-macOS-arm64.dmg" "./release-assets/"
+        
+        # 创建校验和文件
+        cd release-assets
+        sha256sum * > SHA256SUMS.txt
+        cd ..
+    
+    - name: Generate Release Notes
+      run: |
+        cat > release-notes.md << EOF
+        # ${{ env.APP_NAME }} Release
+        
+        ## 📦 下载
+        
+        ### Windows (x64)
+        - **${{ env.APP_NAME }}-Windows-x64.exe** - Windows 10/11 可执行文件
+        
+        ### macOS (Apple Silicon)
+        - **${{ env.APP_NAME }}-macOS-arm64.dmg** - macOS 11+ (M1/M2/M3 芯片)
+        
+        ## 🚀 安装说明
+        
+        ### Windows
+        1. 下载 \`${{ env.APP_NAME }}-Windows-x64.exe\`
+        2. 双击运行即可
+        3. 首次运行会自动安装浏览器驱动
+        
+        ### macOS
+        1. 下载 \`${{ env.APP_NAME }}-macOS-arm64.dmg\`
+        2. 双击挂载 DMG 文件
+        3. 将应用拖拽到应用程序文件夹
+        4. 首次运行可能需要在系统偏好设置中允许运行
+        
+        ## ⚠️ 注意事项
+        
+        - 首次运行需要网络连接以下载浏览器驱动
+        - 请确保系统满足最低要求：
+          - Windows: Windows 10 或更高版本
+          - macOS: macOS 11 或更高版本（Apple Silicon）
+        
+        ## 🔒 文件校验
+        
+        请使用 SHA256SUMS.txt 验证下载文件的完整性。
+        EOF
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name || format('v{0}', github.run_number) }}
+        name: ${{ env.APP_NAME }} ${{ github.ref_name || format('v{0}', github.run_number) }}
+        body_path: release-notes.md
+        files: |
+          release-assets/*
+        draft: false
+        prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-completion:
+    name: Notify Build Completion
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Build Status Summary
+      run: |
+        echo "## 🏗️ 构建状态总结" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| 平台 | 状态 |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Windows x64 | ${{ needs.build-windows.result == 'success' && '✅ 成功' || '❌ 失败' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| macOS ARM64 | ${{ needs.build-macos.result == 'success' && '✅ 成功' || '❌ 失败' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.build-windows.result }}" == "success" && "${{ needs.build-macos.result }}" == "success" ]]; then
+          echo "🎉 所有平台构建成功！" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ 部分平台构建失败，请检查日志。" >> $GITHUB_STEP_SUMMARY
+        fi

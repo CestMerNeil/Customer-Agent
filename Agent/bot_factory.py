@@ -14,5 +14,8 @@ def create_bot():
     if bot_type == "coze":
         from Agent.CozeAgent.bot import CozeBot
         return CozeBot()
+    elif bot_type == "dify":
+        from Agent.DifyAgent.bot import DifyBot
+        return DifyBot()
     else:
         raise RuntimeError(f"Invalid bot type: {bot_type}")
