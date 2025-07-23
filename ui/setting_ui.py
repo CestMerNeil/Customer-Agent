@@ -16,6 +16,71 @@ from utils.logger import get_logger
 from config import config
 
 
+class AIServiceCard(CardWidget):
+    """AI服务选择卡片"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUI()
+    
+    def setupUI(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+        
+        # 卡片标题
+        title_label = StrongBodyLabel("AI 服务选择")
+        title_label.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        layout.addWidget(title_label)
+        
+        # 表单布局
+        form_layout = QFormLayout()
+        form_layout.setSpacing(12)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        # AI服务选择下拉框
+        self.bot_type_combo = ComboBox()
+        self.bot_type_combo.addItems(["coze", "dify"])
+        self.bot_type_combo.setCurrentText("dify")
+        self.bot_type_combo.currentTextChanged.connect(self.onBotTypeChanged)
+        form_layout.addRow("AI 服务类型:", self.bot_type_combo)
+        
+        layout.addLayout(form_layout)
+        
+        # 说明文本
+        description_label = CaptionLabel(
+            "选择要使用的AI服务：\n"
+            "• Coze - 字节跳动的AI对话平台\n"
+            "• Dify - 开源的LLM应用开发平台"
+        )
+        description_label.setStyleSheet("color: #666; padding: 8px 0;")
+        layout.addWidget(description_label)
+    
+    def onBotTypeChanged(self, bot_type):
+        """AI服务类型改变时的回调"""
+        # 通知父组件更新配置卡片显示
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'onAIServiceChanged'):
+                parent.onAIServiceChanged(bot_type)
+                break
+            parent = parent.parent()
+    
+    def getConfig(self) -> dict:
+        """获取配置"""
+        return {
+            "bot_type": self.bot_type_combo.currentText()
+        }
+    
+    def setConfig(self, config: dict):
+        """设置配置"""
+        bot_type = config.get("bot_type", "dify")
+        self.bot_type_combo.setCurrentText(bot_type)
+
+
 class CozeConfigCard(CardWidget):
     """Coze配置卡片"""
     
@@ -80,6 +145,72 @@ class CozeConfigCard(CardWidget):
         self.api_base_edit.setText(config.get("coze_api_base", "https://api.coze.cn"))
         self.api_token_edit.setText(config.get("coze_token", ""))
         self.bot_id_edit.setText(config.get("coze_bot_id", ""))
+
+
+class DifyConfigCard(CardWidget):
+    """Dify配置卡片"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUI()
+    
+    def setupUI(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+        
+        # 卡片标题
+        title_label = StrongBodyLabel("Dify AI 配置")
+        title_label.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        layout.addWidget(title_label)
+        
+        # 表单布局
+        form_layout = QFormLayout()
+        form_layout.setSpacing(12)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        # API Base URL
+        self.api_base_edit = LineEdit()
+        self.api_base_edit.setPlaceholderText("https://api.dify.ai/v1")
+        self.api_base_edit.setText("https://api.dify.ai/v1")
+        form_layout.addRow("API Base URL:", self.api_base_edit)
+        
+        # API Key
+        self.api_key_edit = PasswordLineEdit()
+        self.api_key_edit.setPlaceholderText("输入您的 Dify API Key")
+        form_layout.addRow("API Key:", self.api_key_edit)
+        
+        # App ID (可选)
+        self.app_id_edit = LineEdit()
+        self.app_id_edit.setPlaceholderText("输入您的 App ID (可选)")
+        form_layout.addRow("App ID:", self.app_id_edit)
+                
+        layout.addLayout(form_layout)
+        
+        # 说明文本
+        description_label = CaptionLabel(
+            "请在 Dify 平台获取您的 API Key。\n"
+            "API Key 用于身份验证，App ID 为可选参数。"
+        )
+        description_label.setStyleSheet("color: #666; padding: 8px 0;")
+        layout.addWidget(description_label)
+    
+    def getConfig(self) -> dict:
+        """获取配置"""
+        return {
+            "dify_api_base": self.api_base_edit.text().strip() or "https://api.dify.ai/v1",
+            "dify_api_key": self.api_key_edit.text().strip(),
+            "dify_app_id": self.app_id_edit.text().strip()
+        }
+    
+    def setConfig(self, config: dict):
+        """设置配置"""
+        self.api_base_edit.setText(config.get("dify_api_base", "https://api.dify.ai/v1"))
+        self.api_key_edit.setText(config.get("dify_api_key", ""))
+        self.app_id_edit.setText(config.get("dify_app_id", ""))
 
 
 class BusinessHoursCard(CardWidget):
@@ -164,6 +295,19 @@ class SettingUI(QFrame):
         
         # 设置对象名
         self.setObjectName("设置")
+    
+    def onAIServiceChanged(self, bot_type):
+        """AI服务类型改变时的回调"""
+        if bot_type == "coze":
+            self.coze_config_card.show()
+            self.dify_config_card.hide()
+        elif bot_type == "dify":
+            self.coze_config_card.hide()
+            self.dify_config_card.show()
+        else:
+            # 默认显示Dify
+            self.coze_config_card.hide()
+            self.dify_config_card.show()
     
     def setupUI(self):
         """设置主界面UI"""
@@ -259,11 +403,15 @@ class SettingUI(QFrame):
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
         # 创建配置卡片
+        self.ai_service_card = AIServiceCard(self)
         self.coze_config_card = CozeConfigCard()
+        self.dify_config_card = DifyConfigCard()
         self.business_hours_card = BusinessHoursCard()
         
         # 添加到布局
+        content_layout.addWidget(self.ai_service_card)
         content_layout.addWidget(self.coze_config_card)
+        content_layout.addWidget(self.dify_config_card)
         content_layout.addWidget(self.business_hours_card)
         content_layout.addStretch()
         
@@ -283,9 +431,13 @@ class SettingUI(QFrame):
         """从config模块加载配置"""
         try:            
             loaded_config = {
+                "bot_type": config.get("bot_type", "dify"),
                 "coze_api_base": config.get("coze_api_base", "https://api.coze.cn"),
                 "coze_token": config.get("coze_token", ""),
                 "coze_bot_id": config.get("coze_bot_id", ""),
+                "dify_api_base": config.get("dify_api_base", "https://api.dify.ai/v1"),
+                "dify_api_key": config.get("dify_api_key", ""),
+                "dify_app_id": config.get("dify_app_id", ""),
                 "businessHours": config.get("businessHours", {"start": "08:00", "end": "23:00"})
             }
             
@@ -301,16 +453,22 @@ class SettingUI(QFrame):
     def _loadDefaultConfig(self):
         """加载默认配置"""
         default_config = {
+            "bot_type": "dify",
             "coze_api_base": "https://api.coze.cn",
             "coze_token": "",
             "coze_bot_id": "",
+            "dify_api_base": "https://api.dify.ai/v1",
+            "dify_api_key": "",
+            "dify_app_id": "",
             "businessHours": {
                 "start": "08:00",
                 "end": "23:00"
             }
         }
         
+        self.ai_service_card.setConfig(default_config)
         self.coze_config_card.setConfig(default_config)
+        self.dify_config_card.setConfig(default_config)
         self.business_hours_card.setConfig(default_config)
         self.logger.info("已加载默认配置")
     
@@ -318,9 +476,13 @@ class SettingUI(QFrame):
         """验证并设置配置"""
         # 确保必要的字段存在
         validated_config = {
+            "bot_type": config_data.get("bot_type", "dify"),
             "coze_api_base": config_data.get("coze_api_base", "https://api.coze.cn"),
             "coze_token": config_data.get("coze_token", ""),
             "coze_bot_id": config_data.get("coze_bot_id", ""),
+            "dify_api_base": config_data.get("dify_api_base", "https://api.dify.ai/v1"),
+            "dify_api_key": config_data.get("dify_api_key", ""),
+            "dify_app_id": config_data.get("dify_app_id", ""),
             "businessHours": config_data.get("businessHours", {"start": "08:00", "end": "23:00"})
         }
         
@@ -336,27 +498,42 @@ class SettingUI(QFrame):
             business_hours["end"] = "23:00"
         
         # 设置到界面
+        self.ai_service_card.setConfig(validated_config)
         self.coze_config_card.setConfig(validated_config)
+        self.dify_config_card.setConfig(validated_config)
         self.business_hours_card.setConfig(validated_config)
+        
+        # 根据bot_type显示对应的配置卡片
+        self.onAIServiceChanged(validated_config.get("bot_type", "dify"))
     
     def onSaveConfig(self):
         """保存配置到config模块"""
         try:
             # 获取配置
+            ai_service_config = self.ai_service_card.getConfig()
             coze_config = self.coze_config_card.getConfig()
+            dify_config = self.dify_config_card.getConfig()
             business_config = self.business_hours_card.getConfig()
             
             # 合并配置
-            new_config = {**coze_config, **business_config}
+            new_config = {**ai_service_config, **coze_config, **dify_config, **business_config}
             
-            # 验证必填项
-            if not new_config.get("coze_token"):
-                QMessageBox.warning(self, "配置错误", "请输入 Coze API Token！")
-                return
+            # 根据选择的AI服务验证必填项
+            bot_type = new_config.get("bot_type", "dify")
             
-            if not new_config.get("coze_bot_id"):
-                QMessageBox.warning(self, "配置错误", "请输入 Bot ID！")
-                return
+            if bot_type == "coze":
+                if not new_config.get("coze_token"):
+                    QMessageBox.warning(self, "配置错误", "请输入 Coze API Token！")
+                    return
+                
+                if not new_config.get("coze_bot_id"):
+                    QMessageBox.warning(self, "配置错误", "请输入 Bot ID！")
+                    return
+            
+            elif bot_type == "dify":
+                if not new_config.get("dify_api_key"):
+                    QMessageBox.warning(self, "配置错误", "请输入 Dify API Key！")
+                    return
             
             # 验证时间设置
             start_time = self.business_hours_card.start_time_picker.getTime()
