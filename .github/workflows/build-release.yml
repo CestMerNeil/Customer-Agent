@@ -1,4 +1,4 @@
-name: Build Multi-Platform Release
+name: Build Multi-Platform Release (Fixed)
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
     - name: Install System Dependencies
       run: |
         # 安装 Visual C++ 构建工具（某些包可能需要）
-        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
+        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" --no-progress
       shell: powershell
       continue-on-error: true
     
@@ -48,7 +48,8 @@ jobs:
     
     - name: Install Playwright Browsers
       run: |
-        playwright install chrome --with-deps
+        python -m playwright install chrome --with-deps
+      continue-on-error: true  # 如果安装失败，继续构建，运行时再安装
     
     - name: Prepare Build Environment
       run: |
@@ -59,8 +60,54 @@ jobs:
         
         # 检查配置文件
         if (!(Test-Path "config.json")) {
-          echo '{"coze_api_base": "https://api.coze.cn", "coze_token": "", "coze_bot_id": "", "bot_type": "coze"}' | Out-File -FilePath "config.json" -Encoding UTF8
+          $config = @{
+            coze_api_base = "https://api.coze.cn"
+            coze_token = ""
+            coze_bot_id = ""
+            bot_type = "coze"
+            businessHours = @{
+              start = "08:00"
+              end = "23:00"
+            }
+          }
+          $config | ConvertTo-Json -Depth 3 | Out-File -FilePath "config.json" -Encoding UTF8
         }
+        
+        # 创建启动脚本，处理 Playwright 首次运行
+        $startupScript = @"
+import sys
+import os
+import subprocess
+from pathlib import Path
+
+def ensure_playwright_browsers():
+    try:
+        # 检查是否已安装浏览器
+        import playwright
+        from playwright.sync_api import sync_playwright
+        
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(headless=True)
+                browser.close()
+                return True
+            except Exception:
+                print("正在安装浏览器驱动...")
+                subprocess.run([sys.executable, "-m", "playwright", "install", "chrome"], check=True)
+                return True
+    except Exception as e:
+        print(f"浏览器驱动安装失败: {e}")
+        return False
+
+if __name__ == "__main__":
+    # 确保浏览器驱动已安装
+    ensure_playwright_browsers()
+    
+    # 启动主应用
+    from app import main
+    main()
+"@
+        $startupScript | Out-File -FilePath "startup.py" -Encoding UTF8
       shell: powershell
     
     - name: Build Windows Executable
@@ -77,12 +124,13 @@ jobs:
           --hidden-import="PyQt6.QtGui" `
           --hidden-import="qfluentwidgets" `
           --hidden-import="playwright" `
+          --hidden-import="playwright.sync_api" `
           --hidden-import="Agent.CozeAgent.bot" `
           --hidden-import="Agent.DifyAgent.bot" `
           --hidden-import="Channel.pinduoduo.pdd_channel" `
           --collect-all="qfluentwidgets" `
-          --collect-all="playwright" `
-          app.py
+          --collect-submodules="playwright" `
+          startup.py
       shell: powershell
     
     - name: Test Windows Executable
@@ -93,6 +141,7 @@ jobs:
           Write-Host "📦 文件大小: $([math]::Round($fileSize, 2)) MB"
         } else {
           Write-Host "❌ Windows 可执行文件构建失败"
+          Get-ChildItem "dist" -Recurse
           exit 1
         }
       shell: powershell
@@ -120,9 +169,10 @@ jobs:
     
     - name: Install System Dependencies
       run: |
-        # 安装 Homebrew 依赖（如果需要）
+        # 更新 Homebrew
         brew update
-        brew install --cask google-chrome  # Playwright 需要
+        # 安装必要的系统依赖
+        brew install --cask google-chrome || true
     
     - name: Install Python Dependencies
       run: |
@@ -132,7 +182,8 @@ jobs:
     
     - name: Install Playwright Browsers
       run: |
-        playwright install chrome --with-deps
+        python -m playwright install chrome --with-deps
+      continue-on-error: true  # 如果安装失败，继续构建
     
     - name: Prepare Build Environment
       run: |
@@ -141,8 +192,54 @@ jobs:
         
         # 创建默认配置文件（如果不存在）
         if [ ! -f "config.json" ]; then
-          echo '{"coze_api_base": "https://api.coze.cn", "coze_token": "", "coze_bot_id": "", "bot_type": "coze"}' > config.json
+          cat > config.json << EOF
+        {
+          "coze_api_base": "https://api.coze.cn",
+          "coze_token": "",
+          "coze_bot_id": "",
+          "bot_type": "coze",
+          "businessHours": {
+            "start": "08:00",
+            "end": "23:00"
+          }
+        }
+        EOF
         fi
+        
+        # 创建启动脚本
+        cat > startup.py << 'EOF'
+        import sys
+        import os
+        import subprocess
+        from pathlib import Path
+        
+        def ensure_playwright_browsers():
+            try:
+                # 检查是否已安装浏览器
+                import playwright
+                from playwright.sync_api import sync_playwright
+                
+                with sync_playwright() as p:
+                    try:
+                        browser = p.chromium.launch(headless=True)
+                        browser.close()
+                        return True
+                    except Exception:
+                        print("正在安装浏览器驱动...")
+                        subprocess.run([sys.executable, "-m", "playwright", "install", "chrome"], check=True)
+                        return True
+            except Exception as e:
+                print(f"浏览器驱动安装失败: {e}")
+                return False
+        
+        if __name__ == "__main__":
+            # 确保浏览器驱动已安装
+            ensure_playwright_browsers()
+            
+            # 启动主应用
+            from app import main
+            main()
+        EOF
     
     - name: Build macOS Application
       run: |
@@ -158,15 +255,16 @@ jobs:
           --hidden-import="PyQt6.QtGui" \
           --hidden-import="qfluentwidgets" \
           --hidden-import="playwright" \
+          --hidden-import="playwright.sync_api" \
           --hidden-import="Agent.CozeAgent.bot" \
           --hidden-import="Agent.DifyAgent.bot" \
           --hidden-import="Channel.pinduoduo.pdd_channel" \
           --collect-all="qfluentwidgets" \
-          --collect-all="playwright" \
+          --collect-submodules="playwright" \
           --target-arch="arm64" \
-          app.py
+          startup.py
     
-    - name: Create macOS App Bundle
+    - name: Create macOS App Bundle and DMG
       run: |
         # 创建 .app 包结构
         APP_DIR="dist/${{ env.APP_NAME }}.app"
@@ -175,6 +273,9 @@ jobs:
         
         # 移动可执行文件
         mv "dist/${{ env.APP_NAME }}" "$APP_DIR/Contents/MacOS/"
+        
+        # 设置可执行权限
+        chmod +x "$APP_DIR/Contents/MacOS/${{ env.APP_NAME }}"
         
         # 创建 Info.plist
         cat > "$APP_DIR/Contents/Info.plist" << EOF
@@ -198,12 +299,36 @@ jobs:
             <string>11.0</string>
             <key>LSRequiresNativeExecution</key>
             <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>LSApplicationCategoryType</key>
+            <string>public.app-category.business</string>
+            <key>NSAppleEventsUsageDescription</key>
+            <string>此应用需要访问系统事件以实现自动化功能</string>
+            <key>NSCameraUsageDescription</key>
+            <string>此应用可能需要访问摄像头以实现某些功能</string>
         </dict>
         </plist>
         EOF
         
+        # 创建启动脚本（解决权限问题）
+        cat > "$APP_DIR/Contents/MacOS/launcher.sh" << 'EOF'
+        #!/bin/bash
+        DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        export DYLD_LIBRARY_PATH="$DIR:$DYLD_LIBRARY_PATH"
+        exec "$DIR/${{ env.APP_NAME }}" "$@"
+        EOF
+        
+        chmod +x "$APP_DIR/Contents/MacOS/launcher.sh"
+        
+        # 移除隔离属性（避免 macOS 安全警告）
+        xattr -cr "$APP_DIR" || true
+        
         # 创建 DMG 文件
         hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "$APP_DIR" -ov -format UDZO "dist/${{ env.APP_NAME }}-macOS-arm64.dmg"
+        
+        # 移除 DMG 的隔离属性
+        xattr -cr "dist/${{ env.APP_NAME }}-macOS-arm64.dmg" || true
     
     - name: Test macOS Application
       run: |
@@ -211,8 +336,13 @@ jobs:
           echo "✅ macOS 应用构建成功"
           file_size=$(du -m "dist/${{ env.APP_NAME }}-macOS-arm64.dmg" | cut -f1)
           echo "📦 DMG 文件大小: ${file_size} MB"
+          
+          # 验证应用结构
+          echo "📁 应用结构:"
+          find "dist/${{ env.APP_NAME }}.app" -type f | head -10
         else
           echo "❌ macOS 应用构建失败"
+          ls -la dist/
           exit 1
         fi
     
@@ -276,24 +406,38 @@ jobs:
         ### Windows
         1. 下载 \`${{ env.APP_NAME }}-Windows-x64.exe\`
         2. 双击运行即可
-        3. 首次运行会自动安装浏览器驱动
+        3. 首次运行会自动安装浏览器驱动（需要网络连接）
+        4. 如遇到 Windows Defender 警告，请添加到信任列表
         
         ### macOS
         1. 下载 \`${{ env.APP_NAME }}-macOS-arm64.dmg\`
         2. 双击挂载 DMG 文件
         3. 将应用拖拽到应用程序文件夹
-        4. 首次运行可能需要在系统偏好设置中允许运行
+        4. 首次运行时，右键点击应用选择"打开"（绕过安全限制）
+        5. 或在系统偏好设置 > 安全性与隐私中允许运行
         
-        ## ⚠️ 注意事项
+        ## ⚠️ 重要提示
         
-        - 首次运行需要网络连接以下载浏览器驱动
-        - 请确保系统满足最低要求：
-          - Windows: Windows 10 或更高版本
-          - macOS: macOS 11 或更高版本（Apple Silicon）
+        - **首次运行**: 需要网络连接下载浏览器驱动，请耐心等待
+        - **Windows 安全警告**: 这是 PyInstaller 打包应用的常见问题，应用是安全的
+        - **macOS 权限**: 首次运行需要授予必要的系统权限
+        
+        ## 🔧 系统要求
+        
+        - **Windows**: Windows 10 或更高版本
+        - **macOS**: macOS 11 或更高版本（仅支持 Apple Silicon 芯片）
+        - **网络**: 首次运行需要网络连接
         
         ## 🔒 文件校验
         
         请使用 SHA256SUMS.txt 验证下载文件的完整性。
+        
+        ## 🐛 问题反馈
+        
+        如遇到问题，请在 GitHub Issues 中反馈，并提供：
+        - 操作系统版本
+        - 错误信息截图
+        - 日志文件（如有）
         EOF
     
     - name: Create Release
@@ -328,6 +472,10 @@ jobs:
         
         if [[ "${{ needs.build-windows.result }}" == "success" && "${{ needs.build-macos.result }}" == "success" ]]; then
           echo "🎉 所有平台构建成功！" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 下载构建产物" >> $GITHUB_STEP_SUMMARY
+          echo "- Windows: 在 Artifacts 中下载 \`windows-x64-executable\`" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS: 在 Artifacts 中下载 \`macos-arm64-dmg\`" >> $GITHUB_STEP_SUMMARY
         else
           echo "⚠️ 部分平台构建失败，请检查日志。" >> $GITHUB_STEP_SUMMARY
         fi
