@@ -17,5 +17,8 @@ def create_bot():
     elif bot_type == "dify":
         from Agent.DifyAgent.bot import DifyBot
         return DifyBot()
+    elif bot_type == "lmstudio":
+        from Agent.LMStudioAgent.bot import LMStudioBot
+        return LMStudioBot()
     else:
         raise RuntimeError(f"Invalid bot type: {bot_type}")
