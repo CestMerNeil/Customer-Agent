@@ -43,7 +43,7 @@ class AIServiceCard(CardWidget):
         
         # AI服务选择下拉框
         self.bot_type_combo = ComboBox()
-        self.bot_type_combo.addItems(["coze", "dify"])
+        self.bot_type_combo.addItems(["coze", "dify", "lmstudio"])
         self.bot_type_combo.setCurrentText("dify")
         self.bot_type_combo.currentTextChanged.connect(self.onBotTypeChanged)
         form_layout.addRow("AI 服务类型:", self.bot_type_combo)
@@ -54,7 +54,8 @@ class AIServiceCard(CardWidget):
         description_label = CaptionLabel(
             "选择要使用的AI服务：\n"
             "• Coze - 字节跳动的AI对话平台\n"
-            "• Dify - 开源的LLM应用开发平台"
+            "• Dify - 开源的LLM应用开发平台\n"
+            "• LM Studio - 本地大语言模型服务"
         )
         description_label.setStyleSheet("color: #666; padding: 8px 0;")
         layout.addWidget(description_label)
@@ -213,6 +214,90 @@ class DifyConfigCard(CardWidget):
         self.app_id_edit.setText(config.get("dify_app_id", ""))
 
 
+class LMStudioConfigCard(CardWidget):
+    """LM Studio配置卡片"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUI()
+    
+    def setupUI(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+        
+        # 卡片标题
+        title_label = StrongBodyLabel("LM Studio 配置")
+        title_label.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        layout.addWidget(title_label)
+        
+        # 表单布局
+        form_layout = QFormLayout()
+        form_layout.setSpacing(12)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        # API Base URL
+        self.api_base_edit = LineEdit()
+        self.api_base_edit.setPlaceholderText("http://localhost:1234/v1")
+        self.api_base_edit.setText("http://localhost:1234/v1")
+        form_layout.addRow("API Base URL:", self.api_base_edit)
+        
+        # 模型名称
+        self.model_edit = LineEdit()
+        self.model_edit.setPlaceholderText("local-model")
+        self.model_edit.setText("local-model")
+        form_layout.addRow("模型名称:", self.model_edit)
+        
+        # 最大Token数
+        self.max_tokens_edit = LineEdit()
+        self.max_tokens_edit.setPlaceholderText("1000")
+        self.max_tokens_edit.setText("1000")
+        form_layout.addRow("最大Token数:", self.max_tokens_edit)
+        
+        # 温度参数
+        self.temperature_edit = LineEdit()
+        self.temperature_edit.setPlaceholderText("0.7")
+        self.temperature_edit.setText("0.7")
+        form_layout.addRow("温度参数:", self.temperature_edit)
+                
+        layout.addLayout(form_layout)
+        
+        # 说明文本
+        description_label = CaptionLabel(
+            "请确保 LM Studio 已启动并运行在指定端口。\n"
+            "模型名称通常为 'local-model'，温度参数范围为 0-1。\n"
+            "温度越高，回复越随机；温度越低，回复越确定。"
+        )
+        description_label.setStyleSheet("color: #666; padding: 8px 0;")
+        layout.addWidget(description_label)
+    
+    def getConfig(self) -> dict:
+        """获取配置"""
+        try:
+            max_tokens = int(self.max_tokens_edit.text().strip() or "1000")
+            temperature = float(self.temperature_edit.text().strip() or "0.7")
+        except ValueError:
+            max_tokens = 1000
+            temperature = 0.7
+            
+        return {
+            "lmstudio_api_base": self.api_base_edit.text().strip() or "http://localhost:1234/v1",
+            "lmstudio_model": self.model_edit.text().strip() or "local-model",
+            "lmstudio_max_tokens": max_tokens,
+            "lmstudio_temperature": temperature
+        }
+    
+    def setConfig(self, config: dict):
+        """设置配置"""
+        self.api_base_edit.setText(config.get("lmstudio_api_base", "http://localhost:1234/v1"))
+        self.model_edit.setText(config.get("lmstudio_model", "local-model"))
+        self.max_tokens_edit.setText(str(config.get("lmstudio_max_tokens", 1000)))
+        self.temperature_edit.setText(str(config.get("lmstudio_temperature", 0.7)))
+
+
 class BusinessHoursCard(CardWidget):
     """业务时间配置卡片"""
     
@@ -301,13 +386,20 @@ class SettingUI(QFrame):
         if bot_type == "coze":
             self.coze_config_card.show()
             self.dify_config_card.hide()
+            self.lmstudio_config_card.hide()
         elif bot_type == "dify":
             self.coze_config_card.hide()
             self.dify_config_card.show()
+            self.lmstudio_config_card.hide()
+        elif bot_type == "lmstudio":
+            self.coze_config_card.hide()
+            self.dify_config_card.hide()
+            self.lmstudio_config_card.show()
         else:
             # 默认显示Dify
             self.coze_config_card.hide()
             self.dify_config_card.show()
+            self.lmstudio_config_card.hide()
     
     def setupUI(self):
         """设置主界面UI"""
@@ -406,12 +498,14 @@ class SettingUI(QFrame):
         self.ai_service_card = AIServiceCard(self)
         self.coze_config_card = CozeConfigCard()
         self.dify_config_card = DifyConfigCard()
+        self.lmstudio_config_card = LMStudioConfigCard()
         self.business_hours_card = BusinessHoursCard()
         
         # 添加到布局
         content_layout.addWidget(self.ai_service_card)
         content_layout.addWidget(self.coze_config_card)
         content_layout.addWidget(self.dify_config_card)
+        content_layout.addWidget(self.lmstudio_config_card)
         content_layout.addWidget(self.business_hours_card)
         content_layout.addStretch()
         
@@ -438,6 +532,10 @@ class SettingUI(QFrame):
                 "dify_api_base": config.get("dify_api_base", "https://api.dify.ai/v1"),
                 "dify_api_key": config.get("dify_api_key", ""),
                 "dify_app_id": config.get("dify_app_id", ""),
+                "lmstudio_api_base": config.get("lmstudio_api_base", "http://localhost:1234/v1"),
+                "lmstudio_model": config.get("lmstudio_model", "local-model"),
+                "lmstudio_max_tokens": config.get("lmstudio_max_tokens", 1000),
+                "lmstudio_temperature": config.get("lmstudio_temperature", 0.7),
                 "businessHours": config.get("businessHours", {"start": "08:00", "end": "23:00"})
             }
             
@@ -460,6 +558,10 @@ class SettingUI(QFrame):
             "dify_api_base": "https://api.dify.ai/v1",
             "dify_api_key": "",
             "dify_app_id": "",
+            "lmstudio_api_base": "http://localhost:1234/v1",
+            "lmstudio_model": "local-model",
+            "lmstudio_max_tokens": 1000,
+            "lmstudio_temperature": 0.7,
             "businessHours": {
                 "start": "08:00",
                 "end": "23:00"
@@ -469,6 +571,7 @@ class SettingUI(QFrame):
         self.ai_service_card.setConfig(default_config)
         self.coze_config_card.setConfig(default_config)
         self.dify_config_card.setConfig(default_config)
+        self.lmstudio_config_card.setConfig(default_config)
         self.business_hours_card.setConfig(default_config)
         self.logger.info("已加载默认配置")
     
@@ -483,6 +586,10 @@ class SettingUI(QFrame):
             "dify_api_base": config_data.get("dify_api_base", "https://api.dify.ai/v1"),
             "dify_api_key": config_data.get("dify_api_key", ""),
             "dify_app_id": config_data.get("dify_app_id", ""),
+            "lmstudio_api_base": config_data.get("lmstudio_api_base", "http://localhost:1234/v1"),
+            "lmstudio_model": config_data.get("lmstudio_model", "local-model"),
+            "lmstudio_max_tokens": config_data.get("lmstudio_max_tokens", 1000),
+            "lmstudio_temperature": config_data.get("lmstudio_temperature", 0.7),
             "businessHours": config_data.get("businessHours", {"start": "08:00", "end": "23:00"})
         }
         
@@ -501,6 +608,7 @@ class SettingUI(QFrame):
         self.ai_service_card.setConfig(validated_config)
         self.coze_config_card.setConfig(validated_config)
         self.dify_config_card.setConfig(validated_config)
+        self.lmstudio_config_card.setConfig(validated_config)
         self.business_hours_card.setConfig(validated_config)
         
         # 根据bot_type显示对应的配置卡片
@@ -513,10 +621,11 @@ class SettingUI(QFrame):
             ai_service_config = self.ai_service_card.getConfig()
             coze_config = self.coze_config_card.getConfig()
             dify_config = self.dify_config_card.getConfig()
+            lmstudio_config = self.lmstudio_config_card.getConfig()
             business_config = self.business_hours_card.getConfig()
             
             # 合并配置
-            new_config = {**ai_service_config, **coze_config, **dify_config, **business_config}
+            new_config = {**ai_service_config, **coze_config, **dify_config, **lmstudio_config, **business_config}
             
             # 根据选择的AI服务验证必填项
             bot_type = new_config.get("bot_type", "dify")
@@ -533,6 +642,11 @@ class SettingUI(QFrame):
             elif bot_type == "dify":
                 if not new_config.get("dify_api_key"):
                     QMessageBox.warning(self, "配置错误", "请输入 Dify API Key！")
+                    return
+            
+            elif bot_type == "lmstudio":
+                if not new_config.get("lmstudio_api_base"):
+                    QMessageBox.warning(self, "配置错误", "请输入 LM Studio API Base URL！")
                     return
             
             # 验证时间设置
