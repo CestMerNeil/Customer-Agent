@@ -58,7 +58,7 @@ class PDDLogin():
             await page.goto(self.base_url)
             
             # 点击账号密码登录
-            await page.click("div.tab-item.last-item:has-text('账号登录')")
+            await page.click("div.Common_item__3diIn:has-text('账号登录')")
             
             # 等待页面加载
             await page.wait_for_selector("input[type='text']")

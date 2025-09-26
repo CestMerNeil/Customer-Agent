@@ -16,7 +16,7 @@ import asyncio
 from typing import Optional
 # 导入消息处理系统
 from Message import put_message
-from config import Config
+from config import config
 
 class PDDChannel(Channel):
     def __init__(self):
@@ -26,7 +26,7 @@ class PDDChannel(Channel):
         self.base_url = "wss://m-ws.pinduoduo.com/"
         self.ws = None
         self._stop_event = None  # 停止事件
-        self.businessHours = Config.get("businessHours")
+        self.businessHours = config.get("businessHours")
 
     async def start_account(self, shop_id: str, user_id: str, on_success: callable, on_failure: callable) -> None:
         """

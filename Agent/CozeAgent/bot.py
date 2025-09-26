@@ -3,7 +3,7 @@ from Agent.bot import Bot
 from bridge.context import ContextType, Context
 from bridge.reply import Reply, ReplyType
 from utils.logger import get_logger
-from config import Config as conf
+from config import config
 from cozepy import Coze, TokenAuth, MessageContentType, MessageType
 from Agent.CozeAgent.user_session import UserSessionManager
 from Agent.CozeAgent.conversation_manager import ConversationManager
@@ -11,12 +11,12 @@ class CozeBot(Bot):
     def __init__(self):
         super().__init__()
         self.logger = get_logger("CozeBot")
-        self.token = conf().get("coze_token")
-        self.bot_id = conf().get("coze_bot_id")
+        self.token = config.get("coze_token")
+        self.bot_id = config.get("coze_bot_id")
         # 初始化Coze客户端
         self.coze_client = Coze(
             auth=TokenAuth(token=self.token),
-            base_url=conf().get("coze_api_base")
+            base_url=config.get("coze_api_base")
         )
         # 初始化会话管理组件
         self.session_manager = UserSessionManager()
