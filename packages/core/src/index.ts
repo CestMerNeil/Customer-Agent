@@ -11,7 +11,7 @@ export type {
   ReplyAction,
   ReplyMode
 } from "./reply";
-export { allowedTransitions, canTransitionMessageState } from "./message-state";
+export { canTransitionMessageState } from "./message-state";
 export type { MessageState } from "./message-state";
 export type {
   AccountLoginRequest,

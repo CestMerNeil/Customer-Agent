@@ -7,7 +7,7 @@ export type MessageState =
   | "ignored"
   | "escalated";
 
-export const allowedTransitions: Record<MessageState, readonly MessageState[]> = {
+const allowedTransitions: Record<MessageState, readonly MessageState[]> = {
   received: ["generating", "ignored", "escalated"],
   generating: ["draft_ready", "sent", "failed"],
   draft_ready: ["sent", "ignored", "escalated", "failed"],
