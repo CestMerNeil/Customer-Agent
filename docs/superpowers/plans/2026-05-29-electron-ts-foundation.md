@@ -76,7 +76,7 @@ Do not move or delete existing Python files in this phase.
 - Create: `.prettierrc.json`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: Create root package manifest**
+- [x] **Step 1: Create root package manifest**
 
 Create `package.json`:
 
@@ -106,7 +106,7 @@ Create `package.json`:
 }
 ```
 
-- [ ] **Step 2: Create workspace definition**
+- [x] **Step 2: Create workspace definition**
 
 Create `pnpm-workspace.yaml`:
 
@@ -116,7 +116,7 @@ packages:
   - "packages/*"
 ```
 
-- [ ] **Step 3: Create shared TypeScript config**
+- [x] **Step 3: Create shared TypeScript config**
 
 Create `tsconfig.base.json`:
 
@@ -143,7 +143,7 @@ Create `tsconfig.base.json`:
 }
 ```
 
-- [ ] **Step 4: Create ESLint config**
+- [x] **Step 4: Create ESLint config**
 
 Create `eslint.config.mjs`:
 
@@ -176,7 +176,7 @@ export default [
 ];
 ```
 
-- [ ] **Step 5: Create Prettier config**
+- [x] **Step 5: Create Prettier config**
 
 Create `.prettierrc.json`:
 
@@ -189,7 +189,7 @@ Create `.prettierrc.json`:
 }
 ```
 
-- [ ] **Step 6: Add Node/Electron ignores**
+- [x] **Step 6: Add Node/Electron ignores**
 
 Append these lines to `.gitignore` if they are not already present:
 
@@ -202,7 +202,7 @@ coverage/
 *.tsbuildinfo
 ```
 
-- [ ] **Step 7: Install workspace dependencies**
+- [x] **Step 7: Install workspace dependencies**
 
 Run:
 
@@ -212,7 +212,7 @@ pnpm install
 
 Expected: `pnpm-lock.yaml` is created and install exits with code 0.
 
-- [ ] **Step 8: Commit root workspace**
+- [x] **Step 8: Commit root workspace**
 
 Run:
 
@@ -236,7 +236,7 @@ git commit -m "build: add typescript workspace foundation"
 - Create: `packages/core/src/index.ts`
 - Create: `packages/core/src/message-state.test.ts`
 
-- [ ] **Step 1: Create core package manifest**
+- [x] **Step 1: Create core package manifest**
 
 Create `packages/core/package.json`:
 
@@ -264,7 +264,7 @@ Create `packages/core/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create core TypeScript config**
+- [x] **Step 2: Create core TypeScript config**
 
 Create `packages/core/tsconfig.json`:
 
@@ -282,7 +282,7 @@ Create `packages/core/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Create core Vitest config**
+- [x] **Step 3: Create core Vitest config**
 
 Create `packages/core/vitest.config.ts`:
 
@@ -297,7 +297,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Write failing state transition tests**
+- [x] **Step 4: Write failing state transition tests**
 
 Create `packages/core/src/message-state.test.ts`:
 
@@ -326,7 +326,7 @@ describe("canTransitionMessageState", () => {
 });
 ```
 
-- [ ] **Step 5: Run test to verify it fails**
+- [x] **Step 5: Run test to verify it fails**
 
 Run:
 
@@ -336,7 +336,7 @@ pnpm --filter @customer-agent/core test
 
 Expected: FAIL because `packages/core/src/message-state.ts` does not exist.
 
-- [ ] **Step 6: Create context contracts**
+- [x] **Step 6: Create context contracts**
 
 Create `packages/core/src/context.ts`:
 
@@ -391,7 +391,7 @@ export interface CustomerServiceContext {
 }
 ```
 
-- [ ] **Step 7: Create reply contracts**
+- [x] **Step 7: Create reply contracts**
 
 Create `packages/core/src/reply.ts`:
 
@@ -416,7 +416,7 @@ export interface GeneratedReply {
 }
 ```
 
-- [ ] **Step 8: Create message state helper**
+- [x] **Step 8: Create message state helper**
 
 Create `packages/core/src/message-state.ts`:
 
@@ -445,7 +445,7 @@ export function canTransitionMessageState(from: MessageState, to: MessageState):
 }
 ```
 
-- [ ] **Step 9: Create IPC contracts**
+- [x] **Step 9: Create IPC contracts**
 
 Create `packages/core/src/ipc.ts`:
 
@@ -497,7 +497,7 @@ export type IpcRequest<TChannel extends IpcChannel> = IpcContract[TChannel]["req
 export type IpcResponse<TChannel extends IpcChannel> = IpcContract[TChannel]["response"];
 ```
 
-- [ ] **Step 10: Create public exports**
+- [x] **Step 10: Create public exports**
 
 Create `packages/core/src/index.ts`:
 
@@ -529,7 +529,7 @@ export type {
 } from "./ipc";
 ```
 
-- [ ] **Step 11: Run core tests**
+- [x] **Step 11: Run core tests**
 
 Run:
 
@@ -541,7 +541,7 @@ pnpm --filter @customer-agent/core build
 
 Expected: all commands exit with code 0.
 
-- [ ] **Step 12: Commit core contracts**
+- [x] **Step 12: Commit core contracts**
 
 Run:
 
@@ -566,7 +566,7 @@ git commit -m "feat: add core customer service contracts"
 - Create: `apps/desktop/src/renderer/App.test.tsx`
 - Create: `apps/desktop/src/worker/index.ts`
 
-- [ ] **Step 1: Create desktop package manifest**
+- [x] **Step 1: Create desktop package manifest**
 
 Create `apps/desktop/package.json`:
 
@@ -603,7 +603,7 @@ Create `apps/desktop/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create desktop TypeScript config**
+- [x] **Step 2: Create desktop TypeScript config**
 
 Create `apps/desktop/tsconfig.json`:
 
@@ -620,7 +620,7 @@ Create `apps/desktop/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Create Vite renderer config**
+- [x] **Step 3: Create Vite renderer config**
 
 Create `apps/desktop/vite.renderer.config.ts`:
 
@@ -642,7 +642,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Create HTML entry**
+- [x] **Step 4: Create HTML entry**
 
 Create `apps/desktop/index.html`:
 
@@ -661,7 +661,7 @@ Create `apps/desktop/index.html`:
 </html>
 ```
 
-- [ ] **Step 5: Write failing renderer smoke test**
+- [x] **Step 5: Write failing renderer smoke test**
 
 Create `apps/desktop/src/renderer/App.test.tsx`:
 
@@ -684,7 +684,7 @@ describe("App", () => {
 });
 ```
 
-- [ ] **Step 6: Run test to verify it fails**
+- [x] **Step 6: Run test to verify it fails**
 
 Run:
 
@@ -694,7 +694,7 @@ pnpm --filter @customer-agent/desktop test
 
 Expected: FAIL because `apps/desktop/src/renderer/App.tsx` does not exist.
 
-- [ ] **Step 7: Create renderer app**
+- [x] **Step 7: Create renderer app**
 
 Create `apps/desktop/src/renderer/App.tsx`:
 
@@ -769,7 +769,7 @@ export function App() {
 }
 ```
 
-- [ ] **Step 8: Create renderer entry**
+- [x] **Step 8: Create renderer entry**
 
 Create `apps/desktop/src/renderer/main.tsx`:
 
@@ -791,7 +791,7 @@ createRoot(root).render(
 );
 ```
 
-- [ ] **Step 9: Create Electron main process**
+- [x] **Step 9: Create Electron main process**
 
 Create `apps/desktop/src/main/index.ts`:
 
@@ -839,7 +839,7 @@ app.on("activate", () => {
 });
 ```
 
-- [ ] **Step 10: Create preload bridge**
+- [x] **Step 10: Create preload bridge**
 
 Create `apps/desktop/src/preload/index.ts`:
 
@@ -861,7 +861,7 @@ contextBridge.exposeInMainWorld("customerAgent", api);
 export type CustomerAgentBridge = typeof api;
 ```
 
-- [ ] **Step 11: Create worker entry stub**
+- [x] **Step 11: Create worker entry stub**
 
 Create `apps/desktop/src/worker/index.ts`:
 
@@ -882,7 +882,7 @@ export function markWorkerReady(): WorkerStatus {
 markWorkerReady();
 ```
 
-- [ ] **Step 12: Run desktop checks**
+- [x] **Step 12: Run desktop checks**
 
 Run:
 
@@ -894,7 +894,7 @@ pnpm --filter @customer-agent/desktop build
 
 Expected: all commands exit with code 0.
 
-- [ ] **Step 13: Commit desktop shell**
+- [x] **Step 13: Commit desktop shell**
 
 Run:
 
@@ -910,7 +910,7 @@ git commit -m "feat: add electron desktop shell"
 **Files:**
 - Modify only if checks reveal a concrete issue in files created by Tasks 1-3.
 
-- [ ] **Step 1: Run all workspace checks**
+- [x] **Step 1: Run all workspace checks**
 
 Run:
 
@@ -923,7 +923,7 @@ pnpm lint
 
 Expected: all commands exit with code 0.
 
-- [ ] **Step 2: Inspect git status**
+- [x] **Step 2: Inspect git status**
 
 Run:
 
@@ -933,7 +933,7 @@ git status --short
 
 Expected: only unrelated pre-existing Python/local-knowledge changes may remain unstaged. Files from the TypeScript foundation should already be committed.
 
-- [ ] **Step 3: Document next plan boundaries**
+- [x] **Step 3: Document next plan boundaries**
 
 Create `docs/superpowers/plans/2026-05-29-next-phase-index.md`:
 
@@ -952,7 +952,7 @@ The Electron TypeScript foundation is complete. Implement these follow-up plans 
 8. Electron packaging and update flow.
 ```
 
-- [ ] **Step 4: Commit phase index**
+- [x] **Step 4: Commit phase index**
 
 Run:
 
