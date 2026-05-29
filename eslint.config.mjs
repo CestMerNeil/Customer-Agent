@@ -9,8 +9,8 @@ export default [
       ".venv/**",
       "logs/**",
       "user_data/**",
-      ".superpowers/**"
-    ]
+      ".superpowers/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -19,8 +19,8 @@ export default [
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
-      ]
-    }
-  }
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];
