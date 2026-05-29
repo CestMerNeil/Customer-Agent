@@ -67,3 +67,8 @@ CLAUDE.md
 .spec-workflow/
 .serena/
 .superpowers/
+node_modules/
+out/
+.vite/
+coverage/
+*.tsbuildinfo
