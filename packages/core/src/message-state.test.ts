@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canTransitionMessageState } from "./message-state";
+import { canTransitionMessageState } from "./message-state.js";
 
 describe("canTransitionMessageState", () => {
   it("allows automatic reply progression", () => {

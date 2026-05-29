@@ -4,15 +4,15 @@ export type {
   CustomerServiceContext,
   GoodsContext,
   OrderContext
-} from "./context";
+} from "./context.js";
 export type {
   GeneratedReply,
   KnowledgeSourceReference,
   ReplyAction,
   ReplyMode
-} from "./reply";
-export { canTransitionMessageState } from "./message-state";
-export type { MessageState } from "./message-state";
+} from "./reply.js";
+export { canTransitionMessageState } from "./message-state.js";
+export type { MessageState } from "./message-state.js";
 export type {
   AccountLoginRequest,
   AccountLoginResult,
@@ -22,4 +22,4 @@ export type {
   IpcContract,
   IpcRequest,
   IpcResponse
-} from "./ipc";
+} from "./ipc.js";

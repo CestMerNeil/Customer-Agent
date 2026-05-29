@@ -1,5 +1,5 @@
-import type { CustomerServiceContext } from "./context";
-import type { GeneratedReply, ReplyMode } from "./reply";
+import type { CustomerServiceContext } from "./context.js";
+import type { GeneratedReply, ReplyMode } from "./reply.js";
 
 export interface AccountLoginRequest {
   username: string;
