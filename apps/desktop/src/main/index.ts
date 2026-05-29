@@ -12,7 +12,7 @@ async function createWindow() {
     minHeight: 720,
     title: "拼多多 AI 客服助手",
     webPreferences: {
-      preload: path.join(dirname, "../preload/index.js"),
+      preload: path.join(dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
