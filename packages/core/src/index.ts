@@ -6,6 +6,19 @@ export type {
   OrderContext
 } from "./context.js";
 export type {
+  AccountRecord,
+  AccountStatus,
+  AppSettings,
+  InferenceConfig,
+  KnowledgeDocumentRecord,
+  KnowledgeScope,
+  KnowledgeSearchResult,
+  LogLevel,
+  LogRecord,
+  MessageRecord,
+  ReplyDraftRecord
+} from "./domain.js";
+export type {
   GeneratedReply,
   KnowledgeSourceReference,
   ReplyAction,

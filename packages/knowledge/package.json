@@ -1,0 +1,25 @@
+{
+  "name": "@customer-agent/knowledge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@customer-agent/core": "workspace:*",
+    "@lancedb/lancedb": "^0.22.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}

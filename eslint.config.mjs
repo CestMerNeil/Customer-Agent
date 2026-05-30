@@ -5,6 +5,7 @@ export default [
   {
     ignores: [
       "dist/**",
+      "**/dist/**",
       "node_modules/**",
       ".venv/**",
       "logs/**",

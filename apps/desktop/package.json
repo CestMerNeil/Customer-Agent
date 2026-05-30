@@ -5,19 +5,33 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build:deps": "pnpm --filter @customer-agent/core build",
+    "build:deps": "pnpm --filter @customer-agent/core --filter @customer-agent/db --filter @customer-agent/inference --filter @customer-agent/knowledge --filter @customer-agent/agents --filter @customer-agent/pdd build",
     "dev": "pnpm run build:deps && node scripts/dev.mjs",
     "build": "pnpm run build:deps && tsc -p tsconfig.build.json && vite build --config vite.renderer.config.ts",
     "typecheck": "pnpm run build:deps && tsc -p tsconfig.json --noEmit --rootDir .",
     "test": "vitest run --config vite.renderer.config.ts",
     "lint": "eslint src scripts vite.renderer.config.ts",
     "smoke:runtime": "pnpm run build && node scripts/smoke-runtime.mjs",
-    "smoke:dev": "pnpm run build:deps && node scripts/dev.mjs --smoke"
+    "smoke:dev": "pnpm run build:deps && node scripts/dev.mjs --smoke",
+    "package:mac": "pnpm run build && electron-builder --mac",
+    "package:mac:ci": "pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
+    "package:win": "pnpm run build && electron-builder --win",
+    "package:win:ci": "pnpm run build && electron-builder --win nsis zip --publish never",
+    "package:dir": "pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
   },
   "dependencies": {
+    "@customer-agent/agents": "workspace:*",
     "@customer-agent/core": "workspace:*",
+    "@customer-agent/db": "workspace:*",
+    "@customer-agent/inference": "workspace:*",
+    "@customer-agent/knowledge": "workspace:*",
+    "@customer-agent/pdd": "workspace:*",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.0.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^34.0.0",
+    "material-symbols": "^0.44.10",
+    "playwright": "^1.54.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "vite": "^6.0.7"
@@ -26,8 +40,43 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.7",
+    "@electron/notarize": "^3.1.0",
     "@types/react-dom": "^19.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.0.12",
     "jsdom": "^25.0.1",
     "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.customeragent.desktop",
+    "productName": "Customer Agent",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "afterSign": "scripts/notarize.mjs",
+    "publish": {
+      "provider": "generic",
+      "url": "https://updates.example.invalid/customer-agent/"
+    }
   }
 }

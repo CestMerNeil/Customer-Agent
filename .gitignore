@@ -1,74 +1,45 @@
-# Python 缓存文件
-__pycache__
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
+# Dependencies
+node_modules/
+
+# Build output
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+out/
+release/
+apps/desktop/dist/
+apps/desktop/release/
+packages/*/dist/
+*.tsbuildinfo
 
-# 测试文件夹
-test/
-/user_data/
-# 配置文件（可能包含敏感信息）
-config.json
-cookies.json
-conversations.db
-# 日志文件
+# Test and tool caches
+coverage/
+.vite/
+apps/*/node_modules/.vite/
+packages/*/node_modules/.vite/
+
+# Local runtime data and secrets
+.env
+.env.*
 *.log
-
-# 数据库文件
 *.db
 *.sqlite
 *.sqlite3
+user_data/
+logs/
 
-# 环境文件
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDE 配置
+# Editor and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# 操作系统生成的文件
 .DS_Store
 .DS_Store?
 ._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
+# Local assistant/tooling state
 CLAUDE.md
 .claude/
 .spec-workflow/
 .serena/
 .superpowers/
-node_modules/
-out/
-.vite/
-coverage/
-*.tsbuildinfo

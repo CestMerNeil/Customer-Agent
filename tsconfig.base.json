@@ -14,7 +14,12 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@customer-agent/core": ["packages/core/src/index.ts"]
+      "@customer-agent/agents": ["packages/agents/src/index.ts"],
+      "@customer-agent/core": ["packages/core/src/index.ts"],
+      "@customer-agent/db": ["packages/db/src/index.ts"],
+      "@customer-agent/inference": ["packages/inference/src/index.ts"],
+      "@customer-agent/knowledge": ["packages/knowledge/src/index.ts"],
+      "@customer-agent/pdd": ["packages/pdd/src/index.ts"]
     }
   }
 }

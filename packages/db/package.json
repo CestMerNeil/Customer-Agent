@@ -1,0 +1,27 @@
+{
+  "name": "@customer-agent/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@customer-agent/core": "workspace:*",
+    "@types/sql.js": "^1.4.9",
+    "drizzle-orm": "^0.44.5",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}
