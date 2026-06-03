@@ -168,6 +168,9 @@ importers:
       '@customer-agent/core':
         specifier: workspace:*
         version: link:../core
+      playwright:
+        specifier: ^1.54.0
+        version: 1.60.0
     devDependencies:
       vitest:
         specifier: ^2.1.8

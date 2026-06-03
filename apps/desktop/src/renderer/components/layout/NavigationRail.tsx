@@ -17,28 +17,40 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId,
   return (
     <Box
       sx={{
-        width: 80,
+        width: 96,
         height: "100vh",
-        bgcolor: "background.paper",
-        borderRight: "1px solid",
-        borderColor: "divider",
+        bgcolor: "#17211f",
+        color: "#f5f7f2",
+        borderRight: "1px solid rgba(255, 255, 255, 0.08)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        py: 2,
+        py: 2.5,
         flexShrink: 0,
         position: "fixed",
         left: 0,
         top: 0,
+        zIndex: (theme) => theme.zIndex.appBar + 1,
       }}
     >
-      <Box sx={{ mb: 4 }}>
-        <IconButton sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.dark" } }}>
+      <Box sx={{ mb: 3 }}>
+        <IconButton
+          aria-label="客服助手"
+          sx={{
+            width: 48,
+            height: 48,
+            bgcolor: "#e8c468",
+            color: "#17211f",
+            borderRadius: 1.5,
+            boxShadow: "inset 0 -3px 0 rgba(0, 0, 0, 0.16)",
+            "&:hover": { bgcolor: "#f1d47d" },
+          }}
+        >
           <span className="material-symbols-outlined">smart_toy</span>
         </IconButton>
       </Box>
 
-      <Stack spacing={2} sx={{ width: "100%", alignItems: "center" }}>
+      <Stack spacing={0.75} sx={{ width: "100%", alignItems: "center" }}>
         {items.map((item) => {
           const isActive = item.id === activeId;
           return (
@@ -53,16 +65,32 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId,
                   flexDirection: "column",
                   alignItems: "center",
                   cursor: "pointer",
-                  width: "100%",
+                  width: 76,
+                  minHeight: 70,
                   py: 1,
                   position: "relative",
                   border: "none",
-                  bgcolor: "transparent",
+                  borderRadius: 2,
+                  bgcolor: isActive ? "rgba(255, 255, 255, 0.10)" : "transparent",
                   outline: "none",
+                  transition: "background-color 0.2s ease, transform 0.2s ease",
+                  "&:hover": {
+                    bgcolor: isActive ? "rgba(255, 255, 255, 0.13)" : "rgba(255, 255, 255, 0.06)",
+                    transform: "translateX(2px)",
+                  },
+                  "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    left: -10,
+                    top: 16,
+                    bottom: 16,
+                    width: 3,
+                    borderRadius: 2,
+                    bgcolor: isActive ? "#e8c468" : "transparent",
+                  },
                   "&:focus-visible": {
                     "& .rail-icon-container": {
-                      outline: "2px solid",
-                      outlineColor: "primary.main",
+                      outline: "2px solid #e8c468",
                       outlineOffset: 2,
                     },
                   },
@@ -73,16 +101,13 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId,
                   sx={{
                     width: 56,
                     height: 32,
-                    borderRadius: 16,
+                    borderRadius: 1.25,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    bgcolor: isActive ? "primary.light" : "transparent",
-                    color: isActive ? "primary.main" : "text.secondary",
-                    transition: "background-color 0.2s",
-                    "&:hover": {
-                      bgcolor: isActive ? "primary.light" : "action.hover",
-                    },
+                    bgcolor: isActive ? "rgba(232, 196, 104, 0.18)" : "transparent",
+                    color: isActive ? "#e8c468" : "rgba(245, 247, 242, 0.68)",
+                    transition: "background-color 0.2s ease, color 0.2s ease",
                   }}
                 >
                   <span className="material-symbols-outlined">{item.icon}</span>
@@ -93,7 +118,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId,
                     mt: 0.5,
                     fontSize: "0.75rem",
                     fontWeight: isActive ? 700 : 400,
-                    color: isActive ? "text.primary" : "text.secondary",
+                    color: isActive ? "#ffffff" : "rgba(245, 247, 242, 0.72)",
                   }}
                 >
                   {item.label}

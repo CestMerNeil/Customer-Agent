@@ -16,6 +16,15 @@ export class OpenAICompatibleClient {
   ) {}
 
   async healthCheck(): Promise<void> {
+    if (!this.config.baseUrl.trim()) {
+      throw new Error("OpenAI compatible endpoint 未配置 baseUrl");
+    }
+    if (!this.config.chatModel.trim()) {
+      throw new Error("OpenAI compatible endpoint 未配置 chatModel");
+    }
+    if (!this.config.embeddingModel.trim()) {
+      throw new Error("OpenAI compatible endpoint 未配置 embeddingModel");
+    }
     await this.chat("请回复 OK");
   }
 

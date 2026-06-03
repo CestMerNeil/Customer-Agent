@@ -7,6 +7,7 @@ out/
 release/
 apps/desktop/dist/
 apps/desktop/release/
+apps/desktop/build/playwright-browsers/
 packages/*/dist/
 *.tsbuildinfo
 

@@ -8,11 +8,11 @@ export type MessageState =
   | "escalated";
 
 const allowedTransitions: Record<MessageState, readonly MessageState[]> = {
-  received: ["generating", "ignored", "escalated"],
+  received: ["generating", "ignored", "escalated", "sent"],
   generating: ["draft_ready", "sent", "failed"],
   draft_ready: ["sent", "ignored", "escalated", "failed"],
   sent: [],
-  failed: ["generating", "ignored", "escalated"],
+  failed: ["generating", "sent", "ignored", "escalated"],
   ignored: [],
   escalated: []
 };

@@ -11,13 +11,16 @@
     "typecheck": "pnpm run build:deps && tsc -p tsconfig.json --noEmit --rootDir .",
     "test": "vitest run --config vite.renderer.config.ts",
     "lint": "eslint src scripts vite.renderer.config.ts",
+    "playwright:install": "node scripts/install-playwright.mjs",
+    "preflight:release": "node scripts/release-preflight.mjs",
     "smoke:runtime": "pnpm run build && node scripts/smoke-runtime.mjs",
+    "smoke:runtime:packaged": "node scripts/smoke-packaged-runtime.mjs",
     "smoke:dev": "pnpm run build:deps && node scripts/dev.mjs --smoke",
-    "package:mac": "pnpm run build && electron-builder --mac",
-    "package:mac:ci": "pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
-    "package:win": "pnpm run build && electron-builder --win",
-    "package:win:ci": "pnpm run build && electron-builder --win nsis zip --publish never",
-    "package:dir": "pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
+    "package:mac": "pnpm run playwright:install && pnpm run preflight:release && pnpm run build && electron-builder --mac",
+    "package:mac:ci": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
+    "package:win": "pnpm run playwright:install && pnpm run preflight:release && pnpm run build && electron-builder --win",
+    "package:win:ci": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && electron-builder --win nsis zip --publish never",
+    "package:dir": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
   },
   "dependencies": {
     "@customer-agent/agents": "workspace:*",
@@ -56,6 +59,15 @@
     "files": [
       "dist/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/playwright-browsers",
+        "to": "playwright-browsers",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.business",

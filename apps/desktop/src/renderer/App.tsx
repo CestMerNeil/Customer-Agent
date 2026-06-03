@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Chip, Stack, Typography } from "@mui/material";
 import { RootLayout } from "./components/layout/RootLayout";
 import { NavItem } from "./components/layout/NavigationRail";
 
@@ -77,13 +77,28 @@ export function App() {
       onNavSelect={setActiveId}
       title="拼多多 AI 客服助手"
     >
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="body2" color="text.secondary">
-          Electron + TypeScript rewrite
-        </Typography>
-        <Typography variant="h4" sx={{ mt: 1, fontWeight: 500 }}>
-          {activeView.label}
-        </Typography>
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", md: "flex-end" },
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
+        <Box>
+          <Typography variant="overline" color="text.secondary">
+            Customer operations cockpit
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 0.5 }}>
+            {activeView.label}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <Chip size="small" label="PDD" color="primary" variant="outlined" />
+          <Chip size="small" label="Local-first" variant="outlined" />
+        </Stack>
       </Box>
 
       {activeView.component}

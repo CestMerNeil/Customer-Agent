@@ -19,11 +19,20 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
   title,
 }) => {
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <NavigationRail items={navItems} activeId={activeNavId} onSelect={onNavSelect} />
-      <Box component="main" sx={{ flexGrow: 1, p: 3, ml: "80px", mt: "64px" }}>
-        {/* Toolbar is used to push content below TopAppBar */}
-        <Box sx={{ minHeight: "100vh" }}>{children}</Box>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          px: { xs: 2.5, md: 3.5 },
+          py: 3,
+          ml: "96px",
+          mt: "72px",
+          minWidth: 0,
+        }}
+      >
+        <Box sx={{ minHeight: "calc(100vh - 96px)" }}>{children}</Box>
       </Box>
       <TopAppBar title={title} />
     </Box>

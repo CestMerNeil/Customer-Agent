@@ -21,6 +21,13 @@ export class PddHttpClient {
     });
   }
 
+  async postEmptyJson<TResponse = unknown>(url: string): Promise<TResponse> {
+    return this.post<TResponse>(url, {
+      headers: { "Content-Type": "application/json" },
+      body: "",
+    });
+  }
+
   async postForm<TResponse = unknown>(url: string, body: Record<string, string>): Promise<TResponse> {
     return this.post<TResponse>(url, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -47,7 +54,10 @@ export class PddHttpClient {
 
 function defaultHeaders(): Record<string, string> {
   return {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "origin": "https://mms.pinduoduo.com",
+    "referer": "https://mms.pinduoduo.com/",
+    "priority": "u=1, i",
   };
 }

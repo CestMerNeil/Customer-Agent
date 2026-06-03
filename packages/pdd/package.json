@@ -16,7 +16,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@customer-agent/core": "workspace:*"
+    "@customer-agent/core": "workspace:*",
+    "playwright": "^1.54.0"
   },
   "devDependencies": {
     "vitest": "^2.1.8"

@@ -17,4 +17,8 @@ if (!mainSource.includes("../preload/index.cjs")) {
   throw new Error("Electron main process does not point at the CommonJS preload output");
 }
 
+if (!mainSource.includes("process.resourcesPath") || !mainSource.includes("RELEASE_BLOCKING_DIAGNOSTIC: packaged Playwright browser runtime missing")) {
+  throw new Error("Electron main process does not enforce packaged Playwright browser runtime readiness");
+}
+
 console.log("Electron runtime smoke checks passed");

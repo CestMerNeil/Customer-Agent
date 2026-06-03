@@ -8,14 +8,16 @@ describe("canTransitionMessageState", () => {
   });
 
   it("allows human review progression", () => {
+    expect(canTransitionMessageState("received", "sent")).toBe(true);
     expect(canTransitionMessageState("generating", "draft_ready")).toBe(true);
     expect(canTransitionMessageState("draft_ready", "sent")).toBe(true);
     expect(canTransitionMessageState("draft_ready", "ignored")).toBe(true);
     expect(canTransitionMessageState("draft_ready", "escalated")).toBe(true);
+    expect(canTransitionMessageState("failed", "sent")).toBe(true);
+    expect(canTransitionMessageState("failed", "ignored")).toBe(true);
   });
 
   it("rejects impossible transitions", () => {
-    expect(canTransitionMessageState("received", "sent")).toBe(false);
     expect(canTransitionMessageState("sent", "generating")).toBe(false);
     expect(canTransitionMessageState("ignored", "sent")).toBe(false);
   });

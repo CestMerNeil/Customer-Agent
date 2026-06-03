@@ -1,5 +1,6 @@
 export interface PddHttp {
   postJson<TResponse = unknown>(url: string, body: unknown): Promise<TResponse>;
+  postEmptyJson<TResponse = unknown>(url: string): Promise<TResponse>;
   postForm<TResponse = unknown>(url: string, body: Record<string, string>): Promise<TResponse>;
 }
 
@@ -20,6 +21,11 @@ interface PddResponse {
   result?: Record<string, unknown>;
   token?: string;
   errorMsg?: string;
+  error_msg?: string;
+  errorCode?: string | number;
+  error_code?: string | number;
+  message?: string;
+  msg?: string;
 }
 
 export class PddApi {
@@ -41,7 +47,7 @@ export class PddApi {
   }
 
   async getUserInfo(): Promise<PddUserInfo> {
-    const response = await this.http.postForm<PddResponse>("https://mms.pinduoduo.com/janus/api/new/userinfo", {});
+    const response = await this.http.postEmptyJson<PddResponse>("https://mms.pinduoduo.com/janus/api/new/userinfo");
     ensureSuccess(response, "获取用户信息失败");
     return {
       userId: requiredString(response.result?.id, "user id"),
@@ -100,8 +106,18 @@ export class PddApi {
 
 function ensureSuccess(response: PddResponse, fallback: string): void {
   if (response.success !== true) {
-    throw new Error(response.errorMsg ?? fallback);
+    throw new Error(responseError(response, fallback));
   }
+}
+
+function responseError(response: PddResponse, fallback: string): string {
+  const message = stringValue(response.errorMsg)
+    ?? stringValue(response.error_msg)
+    ?? stringValue(response.message)
+    ?? stringValue(response.msg)
+    ?? fallback;
+  const code = stringValue(response.errorCode) ?? stringValue(response.error_code);
+  return code ? `${message}（${code}）` : message;
 }
 
 function requiredString(value: unknown, label: string): string {

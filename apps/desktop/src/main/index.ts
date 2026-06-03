@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from "electron";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LangChainReplyWorkflow } from "@customer-agent/agents";
@@ -12,6 +13,16 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let storePromise: Promise<SqliteAppStore> | undefined;
 let pddService: PddService | undefined;
+
+function configureBundledPlaywright() {
+  const browsersPath = app.isPackaged
+    ? path.join(process.resourcesPath, "playwright-browsers")
+    : path.join(dirname, "../../build/playwright-browsers");
+  if (app.isPackaged && !existsSync(browsersPath)) {
+    throw new Error(`RELEASE_BLOCKING_DIAGNOSTIC: packaged Playwright browser runtime missing at ${browsersPath}`);
+  }
+  process.env.PLAYWRIGHT_BROWSERS_PATH = browsersPath;
+}
 
 function getStore(): Promise<SqliteAppStore> {
   storePromise ??= SqliteAppStore.open(path.join(app.getPath("userData"), "data"));
@@ -43,7 +54,21 @@ async function createInferenceClient(): Promise<OpenAICompatibleClient> {
   const store = await getStore();
   const settings = await store.getSettings();
   if (!settings.inference) {
-    throw new Error("请先在模型设置中配置 OpenAI 兼容 endpoint。");
+    const error = new Error("请先在模型设置中配置 OpenAI 兼容 endpoint。");
+    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
+      error: error.message,
+    });
+    throw error;
+  }
+  if (!settings.inference.baseUrl.trim() || !settings.inference.chatModel.trim() || !settings.inference.embeddingModel.trim()) {
+    const error = new Error("OpenAI 兼容 endpoint 配置不完整。");
+    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
+      baseUrl: settings.inference.baseUrl,
+      chatModel: settings.inference.chatModel,
+      embeddingModel: settings.inference.embeddingModel,
+      error: error.message,
+    });
+    throw error;
   }
   return new OpenAICompatibleClient(settings.inference);
 }
@@ -69,7 +94,10 @@ function setupIpc() {
     const store = await getStore();
     const result = await getPddService().login(request);
     if (!result.ok) {
-      await store.appendLog("error", result.error ?? "拼多多登录失败");
+      await appendDiagnostic(store, "pdd", "session_expiry", {
+        username: request.username,
+        error: result.error ?? "拼多多登录失败",
+      });
       return result;
     }
     return result;
@@ -126,8 +154,13 @@ function setupIpc() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const store = await getStore();
-      await store.appendLog("error", `生成回复失败：${message}`);
-      return { ok: false, error: message };
+      await appendDiagnostic(store, "inference", "reply_generation_failure", {
+        accountId: request.context.accountId,
+        shopId: request.context.shopId,
+        messageId: request.context.id,
+        error: message,
+      });
+      return { ok: false, error: sanitizeUserFacingError(message) };
     }
   });
 
@@ -137,8 +170,8 @@ function setupIpc() {
   });
 
   handle("reply.draft.send", async (request) => getPddService().sendDraft(request.draftId));
-  handle("reply.draft.ignore", async () => ({ ok: true }));
-  handle("reply.draft.escalate", async () => ({ ok: true }));
+  handle("reply.draft.ignore", async (request) => getPddService().ignoreDraft(request.draftId));
+  handle("reply.draft.escalate", async (request) => getPddService().escalateDraft(request.draftId));
 
   handle("knowledge.import", async (request) => {
     try {
@@ -150,7 +183,14 @@ function setupIpc() {
       return { ok: true, document };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { ok: false, error: message };
+      const store = await getStore();
+      await appendDiagnostic(store, "knowledge", "import_failure", {
+        filePath: request.filePath,
+        scope: request.scope,
+        shopId: request.shopId ?? "",
+        error: message,
+      });
+      return { ok: false, error: sanitizeUserFacingError(message) };
     }
   });
 
@@ -160,8 +200,19 @@ function setupIpc() {
   });
 
   handle("knowledge.search", async (request) => {
-    const knowledge = await createKnowledgeService();
-    return { results: await knowledge.search(request) };
+    try {
+      const knowledge = await createKnowledgeService();
+      return { results: await knowledge.search(request) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const store = await getStore();
+      await appendDiagnostic(store, "knowledge", "search_failure", {
+        shopId: request.shopId ?? "",
+        query: request.query,
+        error: message,
+      });
+      return { results: [] };
+    }
   });
 
   handle("inference.config.get", async () => {
@@ -183,7 +234,12 @@ function setupIpc() {
       await client.healthCheck();
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      const store = await getStore();
+      const message = error instanceof Error ? error.message : String(error);
+      await appendDiagnostic(store, "inference", "unhealthy_endpoint", {
+        error: message,
+      });
+      return { ok: false, error: sanitizeUserFacingError(message) };
     }
   });
 
@@ -202,6 +258,31 @@ function setupIpc() {
     const store = await getStore();
     return { logs: await store.listLogs(request ?? {}) };
   });
+}
+
+async function appendDiagnostic(
+  store: SqliteAppStore,
+  subsystem: "pdd" | "inference" | "knowledge",
+  code: string,
+  context: Record<string, string>,
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const fields = Object.entries(context)
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([key, value]) => `${key}=${sanitizeLogValue(value)}`)
+    .join(" ");
+  await store.appendLog("error", `诊断[${subsystem}/${code}] ${timestamp} ${fields}`.trim());
+}
+
+function sanitizeLogValue(value: string): string {
+  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, 300);
+}
+
+function sanitizeUserFacingError(value: string): string {
+  return value
+    .replace(/diagnosis?\[[^\]]+\]\s*/gi, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .trim();
 }
 
 async function createWindow() {
@@ -227,6 +308,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  configureBundledPlaywright();
   setupIpc();
   void createWindow();
 });
