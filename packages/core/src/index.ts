@@ -10,6 +10,7 @@ export type {
   AccountStatus,
   AppSettings,
   InferenceConfig,
+  InferenceRuntimeConfig,
   KnowledgeDocumentRecord,
   KnowledgeScope,
   KnowledgeSearchResult,

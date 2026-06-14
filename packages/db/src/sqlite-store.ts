@@ -199,6 +199,7 @@ export class SqliteAppStore {
       ...settings,
       businessHours: { ...current.businessHours, ...settings.businessHours },
       knowledge: { ...current.knowledge, ...settings.knowledge },
+      ...(settings.inferenceRuntime ? { inferenceRuntime: { ...current.inferenceRuntime, ...settings.inferenceRuntime } } : {}),
     };
     this.db.run(
       "INSERT INTO settings(id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",

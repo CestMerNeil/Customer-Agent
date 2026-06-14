@@ -3,6 +3,7 @@ import type {
   AccountRecord,
   AppSettings,
   InferenceConfig,
+  InferenceRuntimeConfig,
   KnowledgeDocumentRecord,
   KnowledgeScope,
   KnowledgeSearchResult,
@@ -117,6 +118,43 @@ export interface IpcContract {
   "inference.health": {
     request: undefined;
     response: { ok: boolean; error?: string };
+  };
+  "inference.runtime.status": {
+    request: undefined;
+    response: {
+      running: boolean;
+      pid?: number;
+      baseUrl?: string;
+      host?: string;
+      port?: number;
+      modelPath?: string;
+      modelId?: string;
+      runtimeReady?: boolean;
+      runtimeCommand?: string;
+      runtimeError?: string;
+    };
+  };
+  "inference.runtime.prepare": {
+    request: undefined;
+    response: { ok: boolean; runtimeCommand?: string; error?: string; source?: string };
+  };
+  "inference.runtime.start": {
+    request: Partial<InferenceRuntimeConfig>;
+    response: {
+      ok: boolean;
+      error?: string;
+      running: boolean;
+      pid?: number;
+      baseUrl?: string;
+    };
+  };
+  "inference.runtime.stop": {
+    request: undefined;
+    response: { ok: boolean; running: boolean; error?: string };
+  };
+  "inference.modelscope.download": {
+    request: { modelId: string };
+    response: { ok: boolean; modelPath: string; error?: string };
   };
   "settings.get": {
     request: undefined;

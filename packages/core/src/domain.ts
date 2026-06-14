@@ -48,6 +48,18 @@ export interface InferenceConfig {
   maxTokens?: number;
 }
 
+export interface InferenceRuntimeConfig {
+  provider: "llama_cpp";
+  modelId: string;
+  modelPath: string;
+  command: string;
+  commandArgs?: string[];
+  runtimeDownloadUrl?: string;
+  runtimeDownloadSha256?: string;
+  host: string;
+  port: number;
+}
+
 export interface AppSettings {
   replyMode: ReplyMode;
   businessHours: {
@@ -60,6 +72,7 @@ export interface AppSettings {
     topK: number;
   };
   inference?: InferenceConfig;
+  inferenceRuntime?: InferenceRuntimeConfig;
 }
 
 export interface KnowledgeDocumentRecord {

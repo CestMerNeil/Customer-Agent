@@ -157,6 +157,7 @@ export class JsonAppStore {
       ...settings,
       businessHours: { ...this.data.settings.businessHours, ...settings.businessHours },
       knowledge: { ...this.data.settings.knowledge, ...settings.knowledge },
+      ...(settings.inferenceRuntime ? { inferenceRuntime: { ...this.data.settings.inferenceRuntime, ...settings.inferenceRuntime } } : {}),
     };
     await this.persist();
     return this.data.settings;
