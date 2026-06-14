@@ -9,7 +9,9 @@
     "typecheck": "pnpm --filter @customer-agent/core build && pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "verify:flow": "node scripts/verify-flow.mjs",
+    "verify:flow:fast": "node scripts/verify-flow.mjs --fast"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

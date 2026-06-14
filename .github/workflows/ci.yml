@@ -48,3 +48,6 @@ jobs:
 
       - name: Runtime smoke
         run: pnpm --filter @customer-agent/desktop smoke:runtime
+
+      - name: Verify flow (fast)
+        run: pnpm verify:flow:fast

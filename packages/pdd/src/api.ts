@@ -1,3 +1,5 @@
+import { pddHttpBaseUrl } from "./endpoints.js";
+
 export interface PddHttp {
   postJson<TResponse = unknown>(url: string, body: unknown): Promise<TResponse>;
   postEmptyJson<TResponse = unknown>(url: string): Promise<TResponse>;
@@ -38,7 +40,7 @@ export class PddApi {
   }
 
   async getChatToken(): Promise<string> {
-    const response = await this.http.postForm<PddResponse>("https://mms.pinduoduo.com/chats/getToken", { version: "3" });
+    const response = await this.http.postForm<PddResponse>(`${pddHttpBaseUrl()}/chats/getToken`, { version: "3" });
     const token = stringValue(response.token) ?? stringValue(response.result?.token);
     if (!token) {
       throw new Error(`无法从 PDD 响应中获取 chat token: ${JSON.stringify(response)}`);
@@ -47,7 +49,7 @@ export class PddApi {
   }
 
   async getUserInfo(): Promise<PddUserInfo> {
-    const response = await this.http.postEmptyJson<PddResponse>("https://mms.pinduoduo.com/janus/api/new/userinfo");
+    const response = await this.http.postEmptyJson<PddResponse>(`${pddHttpBaseUrl()}/janus/api/new/userinfo`);
     ensureSuccess(response, "获取用户信息失败");
     return {
       userId: requiredString(response.result?.id, "user id"),
@@ -57,7 +59,7 @@ export class PddApi {
   }
 
   async getShopInfo(): Promise<PddShopInfo> {
-    const response = await this.http.postJson<PddResponse>("https://mms.pinduoduo.com/earth/api/merchant/queryMerchantInfoByMallId", {});
+    const response = await this.http.postJson<PddResponse>(`${pddHttpBaseUrl()}/earth/api/merchant/queryMerchantInfoByMallId`, {});
     ensureSuccess(response, "获取店铺信息失败");
     const shopLogo = stringValue(response.result?.mallLogo);
     return {
@@ -68,7 +70,7 @@ export class PddApi {
   }
 
   async setOnlineStatus(status: string): Promise<boolean> {
-    const response = await this.http.postJson<PddResponse>("https://mms.pinduoduo.com/plateau/chat/set_csstatus", {
+    const response = await this.http.postJson<PddResponse>(`${pddHttpBaseUrl()}/plateau/chat/set_csstatus`, {
       data: { cmd: "set_csstatus", status },
       client: "WEB",
     });
@@ -77,7 +79,7 @@ export class PddApi {
   }
 
   async sendText(recipientUid: string, content: string): Promise<{ ok: boolean; error?: string }> {
-    const response = await this.http.postJson<PddResponse>("https://mms.pinduoduo.com/plateau/chat/send_message", {
+    const response = await this.http.postJson<PddResponse>(`${pddHttpBaseUrl()}/plateau/chat/send_message`, {
       data: {
         cmd: "send_message",
         request_id: this.requestId?.() ?? generateRequestId(),

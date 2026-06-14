@@ -5,18 +5,17 @@ import { createReadStream, createWriteStream, existsSync, statSync } from "node:
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
-import { LangChainReplyWorkflow } from "@customer-agent/agents";
 import type {
   IpcChannel,
   IpcRequest,
   IpcResponse,
   InferenceRuntimeConfig,
-  ReplyDraftRecord,
 } from "@customer-agent/core";
 import { SqliteAppStore } from "@customer-agent/db";
 import { ModelScopeManager, RuntimeProcessManager, OpenAICompatibleClient } from "@customer-agent/inference";
 import { LanceKnowledgeService } from "@customer-agent/knowledge";
 import { PddService } from "@customer-agent/pdd";
+import { appendDiagnostic, generateAndPersistReply, sanitizeUserFacingError } from "./reply.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -266,6 +265,17 @@ function getPddService(): PddService {
     getAccount: async (accountId) => (await getStore()).getAccount(accountId),
     saveAccount: async (account) => (await getStore()).upsertAccount(account),
     saveMessage: async (message) => (await getStore()).upsertMessage(message),
+    onMessageReceived: async (message) => {
+      const store = await getStore();
+      const { replyMode } = await store.getSettings();
+      const result = await generateAndPersistReply(
+        { context: message, mode: replyMode },
+        { store, createInferenceClient, createKnowledgeService },
+      );
+      if (result.ok && replyMode === "automatic") {
+        await getPddService().sendMessage(message.id, result.reply.text);
+      }
+    },
     getMessage: async (messageId) => (await getStore()).getMessage(messageId),
     saveDraft: async (draft) => (await getStore()).saveDraft(draft),
     getDraft: async (draftId) => (await getStore()).getDraft(draftId),
@@ -392,42 +402,13 @@ function setupIpc() {
   });
 
   handle("reply.generate", async (request) => {
-    try {
-      const store = await getStore();
-      const settings = await store.getSettings();
-      const client = await createInferenceClient();
-      const knowledge = await createKnowledgeService();
-      const workflow = new LangChainReplyWorkflow({
-        invokeModel: (prompt) => client.chat(prompt),
-        searchKnowledge: (input) => knowledge.search({ ...input, topK: settings.knowledge.topK }),
-      });
-      const reply = await workflow.generate(request);
-      if (request.mode === "human_review") {
-        const draft: ReplyDraftRecord = {
-          id: crypto.randomUUID(),
-          messageId: request.context.id,
-          accountId: request.context.accountId,
-          shopId: request.context.shopId,
-          mode: request.mode,
-          reply,
-          state: "draft_ready",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        await store.saveDraft(draft);
-      }
-      return { ok: true, reply };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const store = await getStore();
-      await appendDiagnostic(store, "inference", "reply_generation_failure", {
-        accountId: request.context.accountId,
-        shopId: request.context.shopId,
-        messageId: request.context.id,
-        error: message,
-      });
-      return { ok: false, error: sanitizeUserFacingError(message) };
-    }
+    const store = await getStore();
+    const result = await generateAndPersistReply(request, {
+      store,
+      createInferenceClient,
+      createKnowledgeService,
+    });
+    return result.ok ? { ok: true, reply: result.reply } : { ok: false, error: result.error };
   });
 
   handle("reply.draft.list", async (request) => {
@@ -689,31 +670,6 @@ function setupIpc() {
     const store = await getStore();
     return { logs: await store.listLogs(request ?? {}) };
   });
-}
-
-async function appendDiagnostic(
-  store: SqliteAppStore,
-  subsystem: "pdd" | "inference" | "knowledge",
-  code: string,
-  context: Record<string, string>,
-): Promise<void> {
-  const timestamp = new Date().toISOString();
-  const fields = Object.entries(context)
-    .filter(([, value]) => value.trim().length > 0)
-    .map(([key, value]) => `${key}=${sanitizeLogValue(value)}`)
-    .join(" ");
-  await store.appendLog("error", `诊断[${subsystem}/${code}] ${timestamp} ${fields}`.trim());
-}
-
-function sanitizeLogValue(value: string): string {
-  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, 300);
-}
-
-function sanitizeUserFacingError(value: string): string {
-  return value
-    .replace(/diagnosis?\[[^\]]+\]\s*/gi, "")
-    .replace(/https?:\/\/\S+/g, "")
-    .trim();
 }
 
 async function createWindow() {

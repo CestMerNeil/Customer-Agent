@@ -1,4 +1,5 @@
 import path from "node:path";
+import WebSocketRuntime from "ws";
 import { canTransitionMessageState } from "@customer-agent/core";
 import type {
   AccountLoginRequest,
@@ -9,6 +10,7 @@ import type {
 } from "@customer-agent/core";
 import { PddApi } from "./api.js";
 import { PddHttpClient } from "./client.js";
+import { pddWsBaseUrl } from "./endpoints.js";
 import { cookieListToJar, parseCookieJar, type BrowserCookie } from "./cookies.js";
 import { normalizePddMessage } from "./normalizer.js";
 
@@ -25,6 +27,7 @@ interface PddServiceOptions {
   getAccount?: (accountId: string) => Promise<AccountRecord | undefined>;
   saveAccount?: (account: Omit<AccountRecord, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Promise<AccountRecord>;
   saveMessage?: (message: Omit<MessageRecord, "updatedAt">) => Promise<MessageRecord>;
+  onMessageReceived?: (message: MessageRecord) => Promise<void>;
   getMessage?: (messageId: string) => Promise<MessageRecord | undefined>;
   saveDraft?: (draft: ReplyDraftRecord) => Promise<ReplyDraftRecord>;
   getDraft?: (draftId: string) => Promise<ReplyDraftRecord | undefined>;
@@ -149,7 +152,7 @@ export class PddService {
         });
         throw error;
       }
-      const SocketCtor = this.options.WebSocketCtor ?? globalThis.WebSocket;
+      const SocketCtor = this.options.WebSocketCtor ?? resolveWebSocketCtor();
       if (!SocketCtor) {
         throw new Error("当前 Node/Electron 运行时没有 WebSocket 构造器。");
       }
@@ -159,7 +162,7 @@ export class PddService {
         client: "web",
         version: "202506091557",
       });
-      const socket = new SocketCtor(`wss://m-ws.pinduoduo.com/?${params.toString()}`);
+      const socket = new SocketCtor(`${pddWsBaseUrl()}/?${params.toString()}`);
       const connection: PddRuntimeConnection = { accountId, socket, stopped: false };
       this.connections.set(accountId, connection);
       socket.onmessage = (event) => {
@@ -314,7 +317,10 @@ export class PddService {
   private async handleSocketMessage(account: AccountRecord, data: unknown): Promise<void> {
     const payload = typeof data === "string" ? JSON.parse(data) as Record<string, unknown> : JSON.parse(String(data)) as Record<string, unknown>;
     const context = normalizePddMessage(payload, { accountId: account.id, shopId: account.shopId });
-    await this.options.saveMessage?.({ ...context, state: "received" });
+    const saved = await this.options.saveMessage?.({ ...context, state: "received" });
+    if (saved) {
+      await this.options.onMessageReceived?.(saved);
+    }
   }
 
   private createApi(cookies: string | Record<string, string> | undefined): PddApi {
@@ -481,6 +487,10 @@ function sanitizeContextValue(value: string): string {
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .slice(0, 300);
+}
+
+function resolveWebSocketCtor(): typeof WebSocket | undefined {
+  return globalThis.WebSocket ?? (WebSocketRuntime as unknown as typeof WebSocket);
 }
 
 function isTerminalDraftState(state: ReplyDraftRecord["state"]): boolean {
