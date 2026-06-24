@@ -27,6 +27,25 @@ export type {
 } from "./reply.js";
 export { canTransitionMessageState } from "./message-state.js";
 export type { MessageState } from "./message-state.js";
+export {
+  buildDefaultAcceptanceSkeleton,
+  createDefaultAcceptanceScopes,
+  createReleaseCapabilityMatrix,
+  validateAcceptanceRecord,
+  validateAcceptanceRecordSet
+} from "./acceptance.js";
+export type {
+  AcceptanceActor,
+  AcceptanceCapability,
+  AcceptanceCapabilityMatrixRow,
+  AcceptanceOutcome,
+  AcceptanceRecord,
+  AcceptanceScopeAlias,
+  AcceptanceValidationResult,
+  BuildAcceptanceSkeletonRequest,
+  RequiredAcceptanceScope,
+  ValidateAcceptanceRecordSetRequest
+} from "./acceptance.js";
 export type {
   AccountLoginRequest,
   AccountLoginResult,

@@ -32,8 +32,6 @@ interface PddServiceOptions {
   saveDraft?: (draft: ReplyDraftRecord) => Promise<ReplyDraftRecord>;
   getDraft?: (draftId: string) => Promise<ReplyDraftRecord | undefined>;
   log?: (level: "info" | "warning" | "error", message: string) => Promise<void>;
-  fetchImpl?: typeof fetch;
-  WebSocketCtor?: typeof WebSocket;
   playwright?: PlaywrightModule;
   loginTimeoutMs?: number;
 }
@@ -152,7 +150,7 @@ export class PddService {
         });
         throw error;
       }
-      const SocketCtor = this.options.WebSocketCtor ?? resolveWebSocketCtor();
+      const SocketCtor = resolveWebSocketCtor();
       if (!SocketCtor) {
         throw new Error("当前 Node/Electron 运行时没有 WebSocket 构造器。");
       }
@@ -335,7 +333,6 @@ export class PddService {
   private createApi(cookies: string | Record<string, string> | undefined): PddApi {
     const clientOptions = {
       cookies: parseCookieJar(cookies),
-      ...(this.options.fetchImpl ? { fetchImpl: this.options.fetchImpl } : {}),
     };
     return new PddApi({ http: new PddHttpClient(clientOptions) });
   }

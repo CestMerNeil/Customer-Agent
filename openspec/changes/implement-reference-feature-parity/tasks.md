@@ -1,21 +1,21 @@
 ## 1. Scope Freeze and Reference Audit
 
-- [ ] 1.1 Record the reference repository commit, README feature list, audited core modules, and must/should/out-of-scope classification in the change notes.
-- [ ] 1.2 Map every reference must capability to the corresponding Electron package, service, IPC channel, UI surface, and acceptance evidence type.
-- [ ] 1.3 Identify existing Electron functionality that can be reused without mock-dependent assumptions.
-- [ ] 1.4 Update developer-facing docs to state that business parity means Electron + TypeScript business equivalence, not PyQt/Python structure equivalence.
+- [x] 1.1 Record the reference repository commit, README feature list, audited core modules, and must/should/out-of-scope classification in the change notes.
+- [x] 1.2 Map every reference must capability to the corresponding Electron package, service, IPC channel, UI surface, and acceptance evidence type.
+- [x] 1.3 Identify existing Electron functionality that can be reused without mock-dependent assumptions.
+- [x] 1.4 Update developer-facing docs to state that business parity means Electron + TypeScript business equivalence, not PyQt/Python structure equivalence.
 
 ## 2. Remove Mock and Seam Verification
 
-- [ ] 2.1 Remove Mock Pinduoduo source, process mode, recorded fixtures, and fixture-driven PDD test paths.
-- [ ] 2.2 Remove `verify:flow`, `verify:flow:fast`, Seam A/B/C scripts, reports, package scripts, and CI references.
-- [ ] 2.3 Remove or rewrite tests that mock PDD, PDD WebSocket, buyer messages, PDD product APIs, Agent tools, LLM, knowledge search, product sync, or transfer as business completion evidence.
-- [ ] 2.4 Keep or add pure unit tests only for non-business helpers such as parsers, redactors, state transitions, and deterministic validation logic.
-- [ ] 2.5 Update `AGENTS.md` and OpenSpec docs so the single verdict is real acceptance records plus release gates, not `report/flow/summary.json`.
+- [x] 2.1 Remove Mock Pinduoduo source, process mode, recorded fixtures, and fixture-driven PDD test paths.
+- [x] 2.2 Remove `verify:flow`, `verify:flow:fast`, Seam A/B/C scripts, reports, package scripts, and CI references.
+- [x] 2.3 Remove or rewrite tests that mock PDD, PDD WebSocket, buyer messages, PDD product APIs, Agent tools, LLM, knowledge search, product sync, or transfer as business completion evidence.
+- [x] 2.4 Keep or add pure unit tests only for non-business helpers such as parsers, redactors, state transitions, and deterministic validation logic.
+- [x] 2.5 Update `AGENTS.md` and OpenSpec docs so the single verdict is real acceptance records plus release gates, not `report/flow/summary.json`.
 
 ## 3. Real Pinduoduo Calibration
 
-- [ ] 3.1 Add sanitized live-calibration procedures for login, user info, shop info, chat token, online status, text send, image send where supported, goods-card send, customer-service list, conversation transfer, product list, product detail, and WebSocket receive.
+- [x] 3.1 Add sanitized live-calibration procedures for login, user info, shop info, chat token, online status, text send, image send where supported, goods-card send, customer-service list, conversation transfer, product list, product detail, and WebSocket receive.
 - [ ] 3.2 Implement calibration scripts or guided UI flows that record endpoint purpose, status, parsed field maps, and sanitized errors without storing credentials, tokens, cookies, raw buyer payloads, or private buyer data.
 - [ ] 3.3 Calibrate `anti-content` and browser-like header handling for product and goods-card endpoints.
 - [ ] 3.4 Calibrate session-expiry, cookie refresh, relogin-required, rate-limit, and retryable failure signatures.
@@ -126,10 +126,10 @@
 
 ## 13. Real Acceptance Evidence
 
-- [ ] 13.1 Define the sanitized acceptance record schema for commit SHA, tag/version, platform, account alias, shop scope, capability, outcome, actor, timestamp, blockers, and notes.
-- [ ] 13.2 Add a validator that fails when required fields are missing or sensitive fields are present.
-- [ ] 13.3 Add release-blocking capability matrix for PDD, Agent, knowledge/product sync, handoff, queue/concurrency, multi-shop, UI, secrets, and packaging.
-- [ ] 13.4 Generate default sanitized account aliases, shop aliases, test-run labels, acceptance skeletons, and capability-matrix rows without requiring the operator to provide low-sensitive naming data.
+- [x] 13.1 Define the sanitized acceptance record schema for commit SHA, tag/version, platform, account alias, shop scope, capability, outcome, actor, timestamp, blockers, and notes.
+- [x] 13.2 Add a validator that fails when required fields are missing or sensitive fields are present.
+- [x] 13.3 Add release-blocking capability matrix for PDD, Agent, knowledge/product sync, handoff, queue/concurrency, multi-shop, UI, secrets, and packaging.
+- [x] 13.4 Generate default sanitized account aliases, shop aliases, test-run labels, acceptance skeletons, and capability-matrix rows without requiring the operator to provide low-sensitive naming data.
 - [ ] 13.5 Record real acceptance for each release-blocking capability against the current implementation commit.
 - [ ] 13.6 Keep blocked capabilities incomplete when real login, real send authorization, a real buyer/test-message path, or required local model dependency is unavailable.
 

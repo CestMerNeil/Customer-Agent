@@ -19,6 +19,17 @@ pnpm build
 pnpm --filter @customer-agent/desktop smoke:runtime
 ```
 
+Business-critical PDD, LLM, Agent, knowledge, product-sync, handoff, queue, and
+release behavior is not verified by mocks. Use sanitized real acceptance records
+and the active OpenSpec change:
+
+```bash
+pnpm exec openspec status --change implement-reference-feature-parity
+pnpm exec openspec validate implement-reference-feature-parity --strict
+pnpm acceptance:generate -- --commit <sha> --out acceptance/skeleton.json
+pnpm acceptance:validate -- --file acceptance/skeleton.json --commit <sha>
+```
+
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` runs lint, typecheck, tests, build, and runtime smoke on pull requests and pushes to `main`/`master`.

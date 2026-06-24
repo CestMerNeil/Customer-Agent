@@ -15,7 +15,7 @@
 ## 3. Human-Review Workspace
 
 - [x] 3.1 Verify `reply.draft.list` + `message.list` expose enough linkage for master–detail (`draft.messageId` → `message.id`); derive client-side from existing fields.
-- [x] 3.1a Extend `reply.draft.send` contract with optional `text`; update `packages/pdd` `sendDraft` to persist and send edited text when present (backward compatible); update the `apps/desktop` main handler to pass it; add a Seam A test for the edited-send path.
+- [x] 3.1a Extend `reply.draft.send` contract with optional `text`; update `packages/pdd` `sendDraft` to persist and send edited text when present (backward compatible); update the `apps/desktop` main handler to pass it; add package-level coverage for the edited-send path.
 - [x] 3.2 Build the workspace master list of pending drafts with selection and pending counts.
 - [x] 3.3 Build the detail pane: source buyer message, matched knowledge context, and an editable draft reply field.
 - [x] 3.4 Wire send (with edited text), ignore, and escalate to `reply.draft.send` / `reply.draft.ignore` / `reply.draft.escalate` and reflect resulting state.
@@ -34,8 +34,8 @@
 
 ## 5. Verification
 
-- [x] 5.1 Run package tests for the touched packages (core, pdd) — green, including the new edited-send Seam A test.
+- [x] 5.1 Run package tests for the touched packages (core, pdd) — green at the time this UI change was implemented.
 - [x] 5.2 Run desktop renderer tests, typecheck, lint, and production build — all green.
-- [x] 5.3 Run `pnpm verify:flow` and confirm Seam C (packaged/Electron) still passes — full mode PASS, `report/flow/summary.json` `passed:true`, seam-a/b/c all green, exit 0.
+- [x] 5.3 Historical verification: the former mock flow passed when this UI change was implemented. Current parity work removes that harness and uses real acceptance gates instead.
 - [x] 5.4 Run `openspec validate electron-ui-redesign --strict` and resolve any spec issues.
 - [ ] 5.5 Manual pass: launch the app, confirm review workspace lands by default, drive one draft through edit→send, and confirm no unwired controls or fabricated values remain — pending an interactive desktop session.

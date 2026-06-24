@@ -10,8 +10,8 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
-    "verify:flow": "node scripts/verify-flow.mjs",
-    "verify:flow:fast": "node scripts/verify-flow.mjs --fast"
+    "acceptance:generate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs generate",
+    "acceptance:validate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs validate"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

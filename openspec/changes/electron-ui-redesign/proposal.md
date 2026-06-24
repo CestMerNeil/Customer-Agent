@@ -1,6 +1,6 @@
 ## Why
 
-The Electron merchant assistant backend is production-leaning: the receive→reply→send pipeline is verifiable through the seam A/B/C harness, account login/start/stop passed a real Pinduoduo acceptance run, and review-lifecycle, diagnostics, and release-readiness IPC all exist. The renderer, however, is still a scaffold built for the empty-data state. It wires most IPC channels but leaves the product's core loop — human review of AI drafts (approve / edit / send / ignore / escalate) — buried as shallow list items, ships unwired buttons and a hardcoded readiness value, and mixes a dark navigation rail with light content without a shared design system.
+The Electron merchant assistant backend is production-leaning: account login/start/stop passed a real Pinduoduo acceptance run, and review-lifecycle, diagnostics, and release-readiness IPC all exist. The renderer, however, is still a scaffold built for the empty-data state. It wires most IPC channels but leaves the product's core loop — human review of AI drafts (approve / edit / send / ignore / escalate) — buried as shallow list items, ships unwired buttons and a hardcoded readiness value, and mixes a dark navigation rail with light content without a shared design system.
 
 This change re-inventories the GUI and rebuilds the front end around a coherent, content-first design language inspired by Apple HIG and Material 3: a single design-token foundation, a clear information architecture, a review workspace as the primary surface, and complete state handling (loading / empty / error / live) with no unwired controls.
 
@@ -29,6 +29,6 @@ This change re-inventories the GUI and rebuilds the front end around a coherent,
 - Affects `apps/desktop/src/renderer` — `theme.ts`, layout components (`RootLayout`, `NavigationRail`, `TopAppBar`), all six page components, and `App.tsx` navigation/IA.
 - Affects renderer tests under `apps/desktop/src/renderer` (`App.test.tsx` and new page/workspace tests).
 - Consumes existing IPC channels (`account.*`, `message.*`, `reply.draft.*`, `reply.generate`, `knowledge.*`, `log.*`, `settings.*`, `inference.*`, `app.health`). One minimal write extension is required: `reply.draft.send` gains an optional `text` so an operator-edited draft can be sent and persisted. This touches `packages/core` (contract), `packages/pdd` (`sendDraft`), and the `apps/desktop` main handler; it is additive and backward compatible.
-- Touches `packages/pdd/src/service.test.ts` (Seam A) for the edited-send path, in addition to renderer tests.
-- Does not change `packages/*` behavior, the PDD adapter, persistence schema, or the eval harness seams.
+- Touches `packages/pdd` for the edited-send path, in addition to renderer tests.
+- Does not change persistence schema or add new PDD business behavior beyond the edited-send path. The separate `implement-reference-feature-parity` change removes the former mock/seam verification harness and replaces it with real acceptance gates.
 - Does not add cloud services, multi-operator state, or new customer-service product features beyond surfacing the existing review loop and readiness.
