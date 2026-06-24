@@ -416,7 +416,7 @@ function setupIpc() {
     return { drafts: await store.listDrafts(request ?? {}) };
   });
 
-  handle("reply.draft.send", async (request) => getPddService().sendDraft(request.draftId));
+  handle("reply.draft.send", async (request) => getPddService().sendDraft(request.draftId, request.text));
   handle("reply.draft.ignore", async (request) => getPddService().ignoreDraft(request.draftId));
   handle("reply.draft.escalate", async (request) => getPddService().escalateDraft(request.draftId));
 
@@ -679,6 +679,8 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     title: "拼多多 AI 客服助手",
+    // macOS: let the sidebar run edge-to-edge under inset traffic lights.
+    titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(dirname, "../preload/index.cjs"),
       contextIsolation: true,

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Box, Button, Card, CardContent, Chip, Divider, Stack, TextField, Typography } from "@mui/material";
-import Grid from "@mui/material/Grid";
+import { Alert, Box, Button, Card, CardContent, Chip, Stack, TextField, Typography } from "@mui/material";
 import type { InferenceRuntimeConfig } from "@customer-agent/core";
+import { tokens } from "../../theme";
+import { FieldRow, InfoRow, SectionLabel } from "../SettingsKit";
 
 export const ModelSettings: React.FC = () => {
   const [baseUrl, setBaseUrl] = useState("http://localhost:8000/v1");
@@ -151,133 +152,50 @@ export const ModelSettings: React.FC = () => {
   };
 
   return (
-    <Grid container spacing={2.5}>
-      <Grid size={{ xs: 12, md: 8 }}>
-        <Card variant="outlined">
-          <CardContent sx={{ p: 3 }}>
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-              <Box>
-                <Typography variant="h6">推理 Endpoint</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  兼容 OpenAI `/chat/completions` 和 `/embeddings` 的本地或远程服务。
-                </Typography>
-              </Box>
-              <Chip
-                label={health ? (health.ok ? "API 可用" : "API 不可用") : "未测试"}
-                color={health?.ok ? "success" : health ? "error" : "default"}
-              />
-            </Stack>
-            <Stack spacing={2}>
-              <TextField fullWidth label="API URL" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
-              <TextField fullWidth label="API Key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
-              <TextField fullWidth label="模型名称" value={chatModel} onChange={(event) => setChatModel(event.target.value)} />
-              <TextField fullWidth label="Embedding 模型" value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
-              <Stack direction="row" spacing={1}>
-                <Button variant="contained" onClick={save} startIcon={<span className="material-symbols-outlined">save</span>}>保存配置</Button>
-                <Button variant="outlined" onClick={test} startIcon={<span className="material-symbols-outlined">network_ping</span>}>测试连接</Button>
+    <Box sx={{ maxWidth: 880 }}>
+      <Stack spacing={3}>
+        <Box>
+          <SectionLabel>运行状态</SectionLabel>
+          <Card>
+            <CardContent sx={{ p: 2.5 }}>
+              <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
+                <Chip
+                  size="small"
+                  color={runtimeStatus?.running ? "success" : "default"}
+                  label={runtimeStatus?.running ? `运行中 · PID ${runtimeStatus.pid ?? "—"}` : "未运行"}
+                />
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={runtimeStatus?.runtimeReady ? "success" : runtimeStatus?.runtimeError ? "error" : "default"}
+                  label={runtimeStatus?.runtimeReady ? "运行时就绪" : runtimeStatus?.runtimeError ? "运行时未就绪" : "运行时未检测"}
+                />
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={health?.ok ? "success" : health ? "error" : "default"}
+                  label={health ? (health.ok ? "API 可用" : "API 不可用") : "API 未测试"}
+                />
               </Stack>
-              {saved && <Typography color="success.main" variant="body2">配置已保存。</Typography>}
-              {health?.error && <Typography color="error.main" variant="body2">{health.error}</Typography>}
-            </Stack>
-          </CardContent>
-        </Card>
-      </Grid>
 
-      <Grid size={{ xs: 12, md: 4 }}>
-        <Card variant="outlined" sx={{ height: "100%" }}>
-          <CardContent>
-              <Typography variant="h6">本地推理 Runtime</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-              本地模型请提供 .gguf 文件路径（支持本地路径或 HTTPS 下载链接），由 llama.cpp 或兼容二进制启动为 OpenAI 兼容服务。
-            </Typography>
-              <Divider sx={{ my: 2 }} />
-            <Stack spacing={2}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Model ID"
-                value={runtimeConfig.modelId}
-                onChange={(event) => updateRuntime({ modelId: event.target.value })}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="运行时命令（如 llama-server）"
-                value={runtimeConfig.command}
-                onChange={(event) => updateRuntime({ command: event.target.value })}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="运行时下载链接（可选）"
-                value={runtimeConfig.runtimeDownloadUrl ?? ""}
-                onChange={(event) => updateRuntime({ runtimeDownloadUrl: event.target.value })}
-                helperText="留空时仅使用 PATH / 打包二进制。"
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="SHA256（可选）"
-                value={runtimeConfig.runtimeDownloadSha256 ?? ""}
-                onChange={(event) => updateRuntime({ runtimeDownloadSha256: event.target.value })}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="命令参数（空格分隔）"
-                value={runtimeConfig.commandArgs?.join(" ") ?? ""}
-                onChange={(event) =>
-                  updateRuntime({
-                    commandArgs: event.target.value
-                      .split(" ")
-                      .map((item) => item.trim())
-                      .filter((item) => item.length > 0),
-                  })
-                }
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="模型路径"
-                value={runtimeConfig.modelPath}
-                placeholder="留空将自动从模型配置中解析/下载本地模型路径"
-                onChange={(event) => updateRuntime({ modelPath: event.target.value })}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="主机"
-                value={runtimeConfig.host}
-                onChange={(event) => updateRuntime({ host: event.target.value })}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="端口"
-                type="number"
-                value={runtimeConfig.port}
-                onChange={(event) => updateRuntime({ port: Number(event.target.value) })}
-              />
-              <Divider />
-              <Stack direction="row" spacing={1}>
+              <Box>
+                <InfoRow
+                  label="服务地址"
+                  value={runtimeStatus?.baseUrl ?? `http://${runtimeConfig.host}:${runtimeConfig.port}/v1`}
+                />
+                <InfoRow
+                  label="模型路径"
+                  value={runtimeStatus?.modelPath || runtimeConfig.modelPath || `模型ID: ${runtimeConfig.modelId || "—"}`}
+                />
+                <InfoRow
+                  label="运行时命令"
+                  value={runtimeStatus?.runtimeCommand || runtimeConfig.command}
+                  last
+                />
+              </Box>
+
+              <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap", gap: 1 }}>
                 <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={download}
-                  startIcon={<span className="material-symbols-outlined">download</span>}
-                >
-                  下载模型
-                </Button>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={prepareRuntime}
-                  startIcon={<span className="material-symbols-outlined">build</span>}
-                >
-                  准备运行时
-                </Button>
-                <Button
-                  fullWidth
                   variant={runtimeStatus?.running ? "outlined" : "contained"}
                   color={runtimeStatus?.running ? "warning" : "primary"}
                   onClick={runtimeStatus?.running ? stopRuntime : startRuntime}
@@ -285,35 +203,156 @@ export const ModelSettings: React.FC = () => {
                 >
                   {runtimeStatus?.running ? "停止服务" : "启动本地服务"}
                 </Button>
+                <Button variant="outlined" onClick={prepareRuntime} startIcon={<span className="material-symbols-outlined">build</span>}>
+                  准备运行时
+                </Button>
+                <Button variant="outlined" onClick={download} startIcon={<span className="material-symbols-outlined">download</span>}>
+                  下载模型
+                </Button>
+                <Button variant="text" onClick={refreshRuntimeStatus} startIcon={<span className="material-symbols-outlined">refresh</span>}>
+                  刷新
+                </Button>
               </Stack>
-              <Button
-                fullWidth
-                variant="text"
-                onClick={refreshRuntimeStatus}
-                startIcon={<span className="material-symbols-outlined">refresh</span>}
-              >
-                刷新运行时状态
+
+              {actionMessage && (
+                <Alert sx={{ mt: 2 }} severity={actionMessage.includes("失败") ? "error" : "info"}>
+                  {actionMessage}
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box>
+          <SectionLabel>推理服务 · OpenAI 兼容</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1 }}>
+              <FieldRow label="API URL">
+                <TextField fullWidth size="small" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+              </FieldRow>
+              <FieldRow label="API Key">
+                <TextField fullWidth size="small" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+              </FieldRow>
+              <FieldRow label="对话模型">
+                <TextField fullWidth size="small" value={chatModel} onChange={(event) => setChatModel(event.target.value)} />
+              </FieldRow>
+              <FieldRow label="Embedding 模型" last>
+                <TextField fullWidth size="small" value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
+              </FieldRow>
+            </CardContent>
+            <Box
+              sx={{
+                px: 2.5,
+                py: 2,
+                borderTop: `1px solid ${tokens.color.border.hairline}`,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                flexWrap: "wrap",
+              }}
+            >
+              <Button variant="contained" onClick={save} startIcon={<span className="material-symbols-outlined">save</span>}>
+                保存配置
               </Button>
-              <Typography variant="body2" color="text.secondary">
-                当前状态：{runtimeStatus?.running ? `运行中（PID: ${runtimeStatus.pid ?? "未知"}）` : "未运行"}
+              <Button variant="outlined" onClick={test} startIcon={<span className="material-symbols-outlined">network_ping</span>}>
+                测试连接
+              </Button>
+              {saved && <Typography variant="body2" color="success.main" sx={{ ml: 0.5 }}>已保存</Typography>}
+              {health?.error && <Typography variant="body2" color="error.main" sx={{ ml: 0.5 }}>{health.error}</Typography>}
+            </Box>
+          </Card>
+        </Box>
+
+        <Box>
+          <SectionLabel>本地运行时 · llama.cpp</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1 }}>
+              <FieldRow label="Model ID">
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={runtimeConfig.modelId}
+                  onChange={(event) => updateRuntime({ modelId: event.target.value })}
+                />
+              </FieldRow>
+              <FieldRow label="模型路径">
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={runtimeConfig.modelPath}
+                  placeholder="留空将自动解析 / 下载本地模型"
+                  onChange={(event) => updateRuntime({ modelPath: event.target.value })}
+                />
+              </FieldRow>
+              <FieldRow label="主机 / 端口">
+                <Stack direction="row" spacing={1}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={runtimeConfig.host}
+                    onChange={(event) => updateRuntime({ host: event.target.value })}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={runtimeConfig.port}
+                    onChange={(event) => updateRuntime({ port: Number(event.target.value) })}
+                    sx={{ width: 120 }}
+                  />
+                </Stack>
+              </FieldRow>
+              <FieldRow label="运行时命令">
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="llama-server"
+                  value={runtimeConfig.command}
+                  onChange={(event) => updateRuntime({ command: event.target.value })}
+                />
+              </FieldRow>
+              <FieldRow label="命令参数">
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="空格分隔"
+                  value={runtimeConfig.commandArgs?.join(" ") ?? ""}
+                  onChange={(event) =>
+                    updateRuntime({
+                      commandArgs: event.target.value
+                        .split(" ")
+                        .map((item) => item.trim())
+                        .filter((item) => item.length > 0),
+                    })
+                  }
+                />
+              </FieldRow>
+              <FieldRow label="下载链接">
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="可选，留空仅用 PATH / 打包二进制"
+                  value={runtimeConfig.runtimeDownloadUrl ?? ""}
+                  onChange={(event) => updateRuntime({ runtimeDownloadUrl: event.target.value })}
+                />
+              </FieldRow>
+              <FieldRow label="SHA256" last>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="可选，校验下载二进制"
+                  value={runtimeConfig.runtimeDownloadSha256 ?? ""}
+                  onChange={(event) => updateRuntime({ runtimeDownloadSha256: event.target.value })}
+                />
+              </FieldRow>
+            </CardContent>
+            <Box sx={{ px: 2.5, py: 1.5, borderTop: `1px solid ${tokens.color.border.hairline}` }}>
+              <Typography variant="caption" color="text.secondary">
+                .gguf 路径支持本地或 HTTPS 链接，由 llama.cpp 或兼容二进制启动为 OpenAI 兼容服务。
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                运行时：{runtimeStatus?.runtimeReady ? "已就绪" : runtimeStatus?.runtimeError ? `未就绪：${runtimeStatus.runtimeError}` : "未检测"}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div">
-                {runtimeStatus?.baseUrl ? `本地服务: ${runtimeStatus.baseUrl}` : `地址: http://${runtimeConfig.host}:${runtimeConfig.port}/v1`}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div">
-                {runtimeStatus?.modelPath ? `模型路径: ${runtimeStatus.modelPath}` : `模型ID: ${runtimeConfig.modelId}`}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div">
-                {runtimeStatus?.runtimeCommand ? `运行时命令: ${runtimeStatus.runtimeCommand}` : `运行时命令: ${runtimeConfig.command}`}
-              </Typography>
-            </Stack>
-            {actionMessage && <Alert sx={{ mt: 2 }} severity={actionMessage.includes("失败") ? "error" : "info"}>{actionMessage}</Alert>}
-          </CardContent>
-        </Card>
-      </Grid>
-    </Grid>
+            </Box>
+          </Card>
+        </Box>
+      </Stack>
+    </Box>
   );
 };

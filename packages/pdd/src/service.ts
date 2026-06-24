@@ -234,7 +234,7 @@ export class PddService {
     return { ok: true };
   }
 
-  async sendDraft(draftId: string): Promise<{ ok: boolean; error?: string }> {
+  async sendDraft(draftId: string, overrideText?: string): Promise<{ ok: boolean; error?: string }> {
     const draft = await this.options.getDraft?.(draftId);
     if (!draft) {
       return { ok: false, error: "找不到要发送的草稿。" };
@@ -247,12 +247,21 @@ export class PddService {
     if (transitionError) {
       return transitionError;
     }
-    const result = await this.sendMessage(draft.messageId, draft.reply.text);
+    // When the operator edited the draft in the review workspace, persist the
+    // edited text into the draft before sending so the stored record matches
+    // what was actually sent.
+    const edited = overrideText?.trim();
+    const outgoing = edited && edited.length > 0 ? edited : draft.reply.text;
+    const draftToSend =
+      edited && edited.length > 0 && edited !== draft.reply.text
+        ? { ...draft, reply: { ...draft.reply, text: edited } }
+        : draft;
+    const result = await this.sendMessage(draftToSend.messageId, outgoing);
     if (!result.ok) {
-      await this.options.saveDraft?.({ ...draft, state: "failed", updatedAt: new Date().toISOString() });
+      await this.options.saveDraft?.({ ...draftToSend, state: "failed", updatedAt: new Date().toISOString() });
       return result;
     }
-    await this.options.saveDraft?.({ ...draft, state: "sent", updatedAt: new Date().toISOString() });
+    await this.options.saveDraft?.({ ...draftToSend, state: "sent", updatedAt: new Date().toISOString() });
     return { ok: true };
   }
 

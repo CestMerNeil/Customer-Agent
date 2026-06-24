@@ -18,9 +18,6 @@ export const LogViewer: React.FC = () => {
             <IconButton size="small" onClick={logs.refresh} aria-label="刷新日志">
               <span className="material-symbols-outlined">refresh</span>
             </IconButton>
-            <IconButton size="small" aria-label="清空日志">
-              <span className="material-symbols-outlined">delete</span>
-            </IconButton>
           </Stack>
         </Box>
         <Divider sx={{ mb: 2 }} />

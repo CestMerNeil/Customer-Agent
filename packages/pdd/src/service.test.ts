@@ -112,6 +112,51 @@ describe("PddService send flow", () => {
     expect(savedDrafts.at(-1)).toMatchObject({ id: "draft-1", state: "sent" });
   });
 
+  it("persists operator-edited text when sending a draft", async () => {
+    const draft: ReplyDraftRecord = {
+      id: "draft-1",
+      messageId: "msg-1",
+      accountId: "account-1",
+      shopId: "shop-1",
+      mode: "human_review",
+      state: "draft_ready",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      updatedAt: "2026-05-29T00:00:00.000Z",
+      reply: {
+        text: "您好，有货。",
+        action: "review",
+        answerable: true,
+        sources: [],
+        createdAt: "2026-05-29T00:00:00.000Z",
+      },
+    };
+    const savedDrafts: ReplyDraftRecord[] = [];
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, result: {} }),
+    });
+    const service = new PddService({
+      getAccount: async () => account,
+      getMessage: async () => message,
+      getDraft: async () => draft,
+      saveMessage: async (saved) => ({ ...saved, updatedAt: "now" }),
+      saveDraft: async (saved) => {
+        savedDrafts.push(saved);
+        return saved;
+      },
+      fetchImpl,
+    });
+
+    await expect(service.sendDraft("draft-1", "您好，现货充足，今天可发。")).resolves.toEqual({ ok: true });
+    expect(savedDrafts.at(-1)).toMatchObject({
+      id: "draft-1",
+      state: "sent",
+      reply: { text: "您好，现货充足，今天可发。" },
+    });
+    const sentBody = JSON.stringify(fetchImpl.mock.calls.at(-1));
+    expect(sentBody).toContain("您好，现货充足，今天可发。");
+  });
+
   it("ignores a draft and marks both draft and source message as ignored", async () => {
     const draft: ReplyDraftRecord = {
       id: "draft-1",

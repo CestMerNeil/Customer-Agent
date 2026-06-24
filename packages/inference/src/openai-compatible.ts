@@ -44,10 +44,14 @@ export class OpenAICompatibleClient {
       }),
     });
     await assertOk(response);
-    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = data.choices?.[0]?.message?.content?.trim();
+    const data = (await response.json()) as ChatCompletionResponse;
+    const choice = data.choices?.[0];
+    const content = extractMessageContent(choice);
     if (!content) {
-      throw new Error("Chat completion response did not include message content");
+      const finish = choice?.finish_reason ? `（finish_reason=${choice.finish_reason}）` : "";
+      throw new Error(
+        `Chat completion 未返回文本内容${finish}。请确认该模型是对话模型且服务正常。原始响应: ${truncate(JSON.stringify(data))}`,
+      );
     }
     return content;
   }
@@ -83,4 +87,52 @@ async function assertOk(response: Response): Promise<void> {
   if (!response.ok) {
     throw new Error(`Inference request failed with HTTP ${response.status}: ${await response.text()}`);
   }
+}
+
+interface ChatContentPart {
+  type?: string;
+  text?: string;
+}
+
+interface ChatCompletionChoice {
+  finish_reason?: string;
+  text?: string;
+  message?: {
+    content?: string | ChatContentPart[] | null;
+    reasoning_content?: string | null;
+  };
+}
+
+interface ChatCompletionResponse {
+  choices?: ChatCompletionChoice[];
+}
+
+/**
+ * Tolerant extraction across OpenAI-compatible servers: `message.content` may be
+ * a plain string, an array of content parts (newer chat schema), or empty with
+ * the text under `reasoning_content`; some servers use completion-style `text`.
+ */
+function extractMessageContent(choice: ChatCompletionChoice | undefined): string | undefined {
+  if (!choice) return undefined;
+  const raw = choice.message?.content;
+  let text = "";
+  if (typeof raw === "string") {
+    text = raw;
+  } else if (Array.isArray(raw)) {
+    text = raw
+      .map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .join("");
+  }
+  if (!text.trim() && typeof choice.message?.reasoning_content === "string") {
+    text = choice.message.reasoning_content;
+  }
+  if (!text.trim() && typeof choice.text === "string") {
+    text = choice.text;
+  }
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function truncate(value: string, max = 300): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
 }

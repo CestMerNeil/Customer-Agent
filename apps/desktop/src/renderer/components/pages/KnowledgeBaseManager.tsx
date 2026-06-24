@@ -15,17 +15,19 @@ import {
   Typography,
 } from "@mui/material";
 import Grid from "@mui/material/Grid";
+import type { KnowledgeScope } from "@customer-agent/core";
 import { useAsync } from "../useAsync";
 
 export const KnowledgeBaseManager: React.FC = () => {
   const [filePath, setFilePath] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const documents = useAsync(() => window.customerAgent.invoke("knowledge.list", undefined), []);
+  const [scope, setScope] = useState<KnowledgeScope>("global");
+  const documents = useAsync(() => window.customerAgent.invoke("knowledge.list", { scope }), [scope]);
   const [results, setResults] = useState<string[]>([]);
 
   const importFile = async () => {
-    const result = await window.customerAgent.invoke("knowledge.import", { filePath, scope: "global" });
+    const result = await window.customerAgent.invoke("knowledge.import", { filePath, scope });
     setStatus(result.ok ? `已导入 ${result.document?.fileName}` : result.error ?? "导入失败");
     await documents.refresh();
   };
@@ -47,19 +49,25 @@ export const KnowledgeBaseManager: React.FC = () => {
             <Divider sx={{ mb: 1 }} />
             <List>
               <ListItem disablePadding>
-                <ListItemButton selected>
+                <ListItemButton selected={scope === "global"} onClick={() => setScope("global")}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    <span className="material-symbols-outlined">folder</span>
+                    <span className="material-symbols-outlined">public</span>
                   </ListItemIcon>
-                  <ListItemText primary="全局知识" secondary={`${documents.data?.documents.length ?? 0} 个文档`} />
+                  <ListItemText
+                    primary="全局知识"
+                    secondary={scope === "global" ? `${documents.data?.documents.length ?? 0} 个文档` : "通用售前售后物流"}
+                  />
                 </ListItemButton>
               </ListItem>
               <ListItem disablePadding>
-                <ListItemButton>
+                <ListItemButton selected={scope === "shop"} onClick={() => setScope("shop")}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
                     <span className="material-symbols-outlined">store</span>
                   </ListItemIcon>
-                  <ListItemText primary="店铺专属" secondary="按 shopId 过滤" />
+                  <ListItemText
+                    primary="店铺专属"
+                    secondary={scope === "shop" ? `${documents.data?.documents.length ?? 0} 个文档` : "店铺差异化补充"}
+                  />
                 </ListItemButton>
               </ListItem>
             </List>

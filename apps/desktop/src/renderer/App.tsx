@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { RootLayout } from "./components/layout/RootLayout";
 import { NavItem } from "./components/layout/NavigationRail";
 
 // Page Components
+import { ReviewWorkspace } from "./components/pages/ReviewWorkspace";
 import { AutoReplyDashboard } from "./components/pages/AutoReplyDashboard";
 import { AccountManager } from "./components/pages/AccountManager";
 import { KnowledgeBaseManager } from "./components/pages/KnowledgeBaseManager";
@@ -15,45 +16,67 @@ type ViewState = {
   id: string;
   label: string;
   icon: string;
-  component: React.ReactNode;
+  section: string;
+  caption: string;
+  render: (navigate: (id: string) => void) => React.ReactNode;
 };
 
 const views: readonly ViewState[] = [
   {
-    id: "auto-reply",
-    label: "自动回复",
-    icon: "chat",
-    component: <AutoReplyDashboard />,
+    id: "review",
+    label: "审核工作台",
+    icon: "rate_review",
+    section: "工作",
+    caption: "人工审核 · 编辑后发送、忽略或升级",
+    render: () => <ReviewWorkspace />,
+  },
+  {
+    id: "overview",
+    label: "概览",
+    icon: "insights",
+    section: "工作",
+    caption: "运行状态与今日队列一览",
+    render: (navigate) => <AutoReplyDashboard onNavigate={navigate} />,
   },
   {
     id: "accounts",
-    label: "账号管理",
+    label: "账号",
     icon: "group",
-    component: <AccountManager />,
+    section: "配置",
+    caption: "拼多多客服账号登录与会话",
+    render: () => <AccountManager />,
   },
   {
     id: "knowledge",
     label: "知识库",
     icon: "library_books",
-    component: <KnowledgeBaseManager />,
+    section: "配置",
+    caption: "全局与店铺知识的导入与检索",
+    render: () => <KnowledgeBaseManager />,
   },
   {
     id: "models",
-    label: "模型设置",
+    label: "模型",
     icon: "settings_suggest",
-    component: <ModelSettings />,
+    section: "配置",
+    caption: "推理 endpoint 与本地运行时",
+    render: () => <ModelSettings />,
   },
   {
     id: "logs",
     label: "日志",
     icon: "history",
-    component: <LogViewer />,
+    section: "系统",
+    caption: "本地运行与诊断记录",
+    render: () => <LogViewer />,
   },
   {
     id: "settings",
     label: "设置",
     icon: "settings",
-    component: <SettingsPage />,
+    section: "系统",
+    caption: "回复策略与本地数据",
+    render: () => <SettingsPage />,
   },
 ];
 
@@ -61,10 +84,11 @@ const navItems: readonly NavItem[] = views.map((v) => ({
   id: v.id,
   label: v.label,
   icon: v.icon,
+  section: v.section,
 }));
 
 export function App() {
-  const [activeId, setActiveId] = useState("auto-reply");
+  const [activeId, setActiveId] = useState("review");
   const activeView = views.find((v) => v.id === activeId) ?? views[0];
   if (!activeView) {
     throw new Error("No renderer views configured");
@@ -77,31 +101,14 @@ export function App() {
       onNavSelect={setActiveId}
       title="拼多多 AI 客服助手"
     >
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: { xs: "flex-start", md: "flex-end" },
-          gap: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <Box>
-          <Typography variant="overline" color="text.secondary">
-            Customer operations cockpit
-          </Typography>
-          <Typography variant="h4" sx={{ mt: 0.5 }}>
-            {activeView.label}
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1}>
-          <Chip size="small" label="PDD" color="primary" variant="outlined" />
-          <Chip size="small" label="Local-first" variant="outlined" />
-        </Stack>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h4">{activeView.label}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {activeView.caption}
+        </Typography>
       </Box>
 
-      {activeView.component}
+      {activeView.render(setActiveId)}
     </RootLayout>
   );
 }

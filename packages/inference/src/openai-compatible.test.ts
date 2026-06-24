@@ -28,6 +28,42 @@ describe("OpenAICompatibleClient", () => {
     );
   });
 
+  it("extracts content from array content parts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: [{ type: "text", text: "有 " }, { type: "text", text: "L 码。" }] } }] }),
+    });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      fetchMock,
+    );
+    await expect(client.chat("请回答")).resolves.toBe("有 L 码。");
+  });
+
+  it("falls back to reasoning_content when content is empty", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "", reasoning_content: "OK" } }] }),
+    });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      fetchMock,
+    );
+    await expect(client.chat("请回答")).resolves.toBe("OK");
+  });
+
+  it("throws a diagnostic error including finish_reason and raw response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "" }, finish_reason: "length" }] }),
+    });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      fetchMock,
+    );
+    await expect(client.chat("请回答")).rejects.toThrow(/finish_reason=length/);
+  });
+
   it("returns embeddings from OpenAI compatible responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

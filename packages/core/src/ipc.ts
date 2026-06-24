@@ -84,7 +84,7 @@ export interface IpcContract {
     response: { drafts: ReplyDraftRecord[] };
   };
   "reply.draft.send": {
-    request: { draftId: string };
+    request: { draftId: string; text?: string };
     response: { ok: boolean; error?: string };
   };
   "reply.draft.ignore": {

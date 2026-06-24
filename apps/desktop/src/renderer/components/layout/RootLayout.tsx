@@ -1,7 +1,7 @@
 import React from "react";
 import { Box } from "@mui/material";
-import { NavigationRail, NavItem } from "./NavigationRail";
-import { TopAppBar } from "./TopAppBar";
+import { NavigationRail, NavItem, SIDEBAR_WIDTH } from "./NavigationRail";
+import { TopAppBar, TOOLBAR_HEIGHT } from "./TopAppBar";
 
 interface RootLayoutProps {
   children: React.ReactNode;
@@ -21,20 +21,20 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <NavigationRail items={navItems} activeId={activeNavId} onSelect={onNavSelect} />
+      <TopAppBar title={title} />
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          px: { xs: 2.5, md: 3.5 },
+          px: { xs: 2.5, md: 4 },
           py: 3,
-          ml: "96px",
-          mt: "72px",
+          ml: `${SIDEBAR_WIDTH}px`,
+          mt: `${TOOLBAR_HEIGHT}px`,
           minWidth: 0,
         }}
       >
-        <Box sx={{ minHeight: "calc(100vh - 96px)" }}>{children}</Box>
+        <Box sx={{ minHeight: `calc(100vh - ${TOOLBAR_HEIGHT}px)` }}>{children}</Box>
       </Box>
-      <TopAppBar title={title} />
     </Box>
   );
 };

@@ -1,79 +1,117 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Box, Button, Card, CardContent, Divider, FormControl, InputLabel, List, ListItem, ListItemText, MenuItem, Select, Stack, Switch, Typography } from "@mui/material";
-import Grid from "@mui/material/Grid";
+import { Box, Button, Card, CardContent, Stack, Switch, TextField, Typography } from "@mui/material";
 import type { ReplyMode } from "@customer-agent/core";
+import { tokens } from "../../theme";
+import { FieldRow, InfoRow, SectionLabel } from "../SettingsKit";
+
+const DATA_DIR = "~/Library/Application Support/Customer-Agent";
 
 export const SettingsPage: React.FC = () => {
   const [replyMode, setReplyMode] = useState<ReplyMode>("human_review");
+  const [businessStart, setBusinessStart] = useState("09:00");
+  const [businessEnd, setBusinessEnd] = useState("21:00");
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void window.customerAgent.invoke("settings.get", undefined).then((response) => {
       setReplyMode(response.settings.replyMode);
+      if (response.settings.businessHours) {
+        setBusinessStart(response.settings.businessHours.start);
+        setBusinessEnd(response.settings.businessHours.end);
+      }
     });
   }, []);
 
   const save = async () => {
-    await window.customerAgent.invoke("settings.save", { replyMode });
+    await window.customerAgent.invoke("settings.save", {
+      replyMode,
+      businessHours: { start: businessStart, end: businessEnd },
+    });
     setMessage("设置已保存");
   };
 
   return (
-    <Grid container spacing={2.5}>
-      <Grid size={{ xs: 12, md: 8 }}>
-        <Card variant="outlined">
-          <CardContent sx={{ p: 3 }}>
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Box>
-                <Typography variant="h6">回复策略</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  控制 AI 回复是直接发送，还是先进入人工审核队列。
-                </Typography>
-              </Box>
-              <Button variant="contained" onClick={save} startIcon={<span className="material-symbols-outlined">save</span>}>
-                保存设置
-              </Button>
-            </Stack>
-            <List sx={{ mt: 2 }}>
-              <ListItem>
-                <ListItemText primary="自动发送回复" secondary="AI 生成回复后直接发送给用户。" />
-                <Switch checked={replyMode === "automatic"} onChange={(_, checked) => setReplyMode(checked ? "automatic" : "human_review")} />
-              </ListItem>
-              <Divider />
-              <ListItem>
-                <ListItemText primary="人工审核模式" secondary="所有 AI 回复都存为草稿，待人工确认后发送。" />
-                <Switch checked={replyMode === "human_review"} onChange={(_, checked) => setReplyMode(checked ? "human_review" : "automatic")} />
-              </ListItem>
-            </List>
-            {message && <Alert sx={{ mt: 2 }} severity="success">{message}</Alert>}
-          </CardContent>
-        </Card>
-      </Grid>
+    <Box sx={{ maxWidth: 720 }}>
+      <Stack spacing={3}>
+        <Box>
+          <SectionLabel>回复策略</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1.5 }}>
+              <Stack direction="row" sx={{ alignItems: "center", gap: 2 }}>
+                <Box sx={{ flexGrow: 1 }}>
+                  <Typography variant="subtitle2">先人工审核后发送</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                    {replyMode === "human_review"
+                      ? "AI 回复都存为草稿，在审核工作台确认后再发送。"
+                      : "AI 生成回复后直接发送给买家，不经人工确认。"}
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={replyMode === "human_review"}
+                  onChange={(_, checked) => setReplyMode(checked ? "human_review" : "automatic")}
+                  slotProps={{ input: { "aria-label": "先人工审核后发送" } }}
+                />
+              </Stack>
+            </CardContent>
+          </Card>
+        </Box>
 
-      <Grid size={{ xs: 12, md: 4 }}>
-        <Stack spacing={2.5}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6">营业时间</Typography>
-              <FormControl fullWidth size="small" sx={{ mt: 2 }}>
-                <InputLabel>营业时间策略</InputLabel>
-                <Select label="营业时间策略" defaultValue="24h">
-                  <MenuItem value="24h">24 小时自动回复</MenuItem>
-                  <MenuItem value="scheduled">仅非营业时间自动回复</MenuItem>
-                </Select>
-              </FormControl>
+        <Box>
+          <SectionLabel>营业时间</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1 }}>
+              <FieldRow label="开始时间">
+                <TextField
+                  size="small"
+                  type="time"
+                  value={businessStart}
+                  onChange={(event) => setBusinessStart(event.target.value)}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ width: 140 }}
+                />
+              </FieldRow>
+              <FieldRow label="结束时间" last>
+                <TextField
+                  size="small"
+                  type="time"
+                  value={businessEnd}
+                  onChange={(event) => setBusinessEnd(event.target.value)}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ width: 140 }}
+                />
+              </FieldRow>
             </CardContent>
           </Card>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6">本地数据</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                /Users/neil/Library/Application Support/Customer-Agent
-              </Typography>
+        </Box>
+
+        <Box>
+          <SectionLabel>本地数据</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1 }}>
+              <InfoRow
+                label="数据目录"
+                value={
+                  <Typography variant="body2" sx={{ fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                    {DATA_DIR}
+                  </Typography>
+                }
+                last
+              />
             </CardContent>
           </Card>
-        </Stack>
-      </Grid>
-    </Grid>
+        </Box>
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Button variant="contained" onClick={save} startIcon={<span className="material-symbols-outlined">save</span>}>
+            保存设置
+          </Button>
+          {message && (
+            <Typography variant="body2" sx={{ color: tokens.color.state.success }}>
+              {message}
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+    </Box>
   );
 };

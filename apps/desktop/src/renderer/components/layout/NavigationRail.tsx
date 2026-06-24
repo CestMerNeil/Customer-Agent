@@ -1,11 +1,15 @@
 import React from "react";
-import { Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
+import { tokens } from "../../theme";
 
 export type NavItem = {
   id: string;
   label: string;
   icon: string;
+  section: string;
 };
+
+export const SIDEBAR_WIDTH = 232;
 
 interface NavigationRailProps {
   items: readonly NavItem[];
@@ -14,120 +18,137 @@ interface NavigationRailProps {
 }
 
 export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId, onSelect }) => {
+  const sections = groupBySection(items);
+
   return (
     <Box
+      component="nav"
+      aria-label="主导航"
       sx={{
-        width: 96,
+        width: SIDEBAR_WIDTH,
         height: "100vh",
-        bgcolor: "#17211f",
-        color: "#f5f7f2",
-        borderRight: "1px solid rgba(255, 255, 255, 0.08)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        py: 2.5,
-        flexShrink: 0,
         position: "fixed",
         left: 0,
         top: 0,
         zIndex: (theme) => theme.zIndex.appBar + 1,
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: tokens.color.surface.sidebar,
+        backdropFilter: "saturate(180%) blur(24px)",
+        WebkitBackdropFilter: "saturate(180%) blur(24px)",
+        borderRight: `1px solid ${tokens.color.border.hairline}`,
       }}
     >
-      <Box sx={{ mb: 3 }}>
-        <IconButton
-          aria-label="客服助手"
-          sx={{
-            width: 48,
-            height: 48,
-            bgcolor: "#e8c468",
-            color: "#17211f",
-            borderRadius: 1.5,
-            boxShadow: "inset 0 -3px 0 rgba(0, 0, 0, 0.16)",
-            "&:hover": { bgcolor: "#f1d47d" },
-          }}
-        >
-          <span className="material-symbols-outlined">smart_toy</span>
-        </IconButton>
+      {/* Draggable title region; leaves room for inset traffic lights. */}
+      <Box
+        sx={{
+          pt: "30px",
+          px: 2,
+          pb: 1.5,
+          WebkitAppRegion: "drag",
+        }}
+      >
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+          <Box
+            aria-hidden
+            sx={{
+              width: 26,
+              height: 26,
+              borderRadius: `${tokens.radius.sm}px`,
+              bgcolor: tokens.color.accent.main,
+              color: tokens.color.accent.contrast,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>smart_toy</span>
+          </Box>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            AI 客服助手
+          </Typography>
+        </Stack>
       </Box>
 
-      <Stack spacing={0.75} sx={{ width: "100%", alignItems: "center" }}>
-        {items.map((item) => {
-          const isActive = item.id === activeId;
-          return (
-            <Tooltip key={item.id} title={item.label} placement="right">
-              <Box
-                component="button"
-                onClick={() => onSelect(item.id)}
-                aria-label={item.label}
-                aria-current={isActive ? "page" : undefined}
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  cursor: "pointer",
-                  width: 76,
-                  minHeight: 70,
-                  py: 1,
-                  position: "relative",
-                  border: "none",
-                  borderRadius: 2,
-                  bgcolor: isActive ? "rgba(255, 255, 255, 0.10)" : "transparent",
-                  outline: "none",
-                  transition: "background-color 0.2s ease, transform 0.2s ease",
-                  "&:hover": {
-                    bgcolor: isActive ? "rgba(255, 255, 255, 0.13)" : "rgba(255, 255, 255, 0.06)",
-                    transform: "translateX(2px)",
-                  },
-                  "&::before": {
-                    content: '""',
-                    position: "absolute",
-                    left: -10,
-                    top: 16,
-                    bottom: 16,
-                    width: 3,
-                    borderRadius: 2,
-                    bgcolor: isActive ? "#e8c468" : "transparent",
-                  },
-                  "&:focus-visible": {
-                    "& .rail-icon-container": {
-                      outline: "2px solid #e8c468",
-                      outlineOffset: 2,
-                    },
-                  },
-                }}
-              >
-                <Box
-                  className="rail-icon-container"
-                  sx={{
-                    width: 56,
-                    height: 32,
-                    borderRadius: 1.25,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    bgcolor: isActive ? "rgba(232, 196, 104, 0.18)" : "transparent",
-                    color: isActive ? "#e8c468" : "rgba(245, 247, 242, 0.68)",
-                    transition: "background-color 0.2s ease, color 0.2s ease",
-                  }}
-                >
-                  <span className="material-symbols-outlined">{item.icon}</span>
-                </Box>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    mt: 0.5,
-                    fontSize: "0.75rem",
-                    fontWeight: isActive ? 700 : 400,
-                    color: isActive ? "#ffffff" : "rgba(245, 247, 242, 0.72)",
-                  }}
-                >
-                  {item.label}
-                </Typography>
-              </Box>
-            </Tooltip>
-          );
-        })}
-      </Stack>
+      <Box sx={{ flexGrow: 1, overflowY: "auto", px: 1.25, pb: 2 }}>
+        {sections.map((section) => (
+          <Box key={section.name} sx={{ mb: 1.5 }}>
+            <Typography
+              variant="overline"
+              sx={{ display: "block", px: 1.25, py: 0.5, color: tokens.color.text.tertiary }}
+            >
+              {section.name}
+            </Typography>
+            <Stack spacing={0.25} role="listbox" aria-label={section.name}>
+              {section.items.map((item) => {
+                const isActive = item.id === activeId;
+                return (
+                  <Box
+                    key={item.id}
+                    component="button"
+                    type="button"
+                    role="option"
+                    onClick={() => onSelect(item.id)}
+                    aria-label={item.label}
+                    aria-current={isActive ? "page" : undefined}
+                    aria-selected={isActive}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.25,
+                      width: "100%",
+                      textAlign: "left",
+                      px: 1.25,
+                      py: 0.75,
+                      border: "none",
+                      borderRadius: `${tokens.radius.sm}px`,
+                      cursor: "pointer",
+                      color: isActive ? tokens.color.accent.contrast : tokens.color.text.primary,
+                      bgcolor: isActive ? tokens.color.accent.main : "transparent",
+                      transition: `background-color ${tokens.motion.duration.fast} ${tokens.motion.easing.standard}`,
+                      WebkitAppRegion: "no-drag",
+                      "&:hover": {
+                        bgcolor: isActive ? tokens.color.accent.main : tokens.color.surface.hover,
+                      },
+                      "&:focus-visible": {
+                        outline: `2px solid ${tokens.color.border.focus}`,
+                        outlineOffset: 2,
+                      },
+                    }}
+                  >
+                    <span
+                      className="material-symbols-outlined"
+                      style={{
+                        fontSize: 19,
+                        color: isActive ? tokens.color.accent.contrast : tokens.color.text.secondary,
+                      }}
+                    >
+                      {item.icon}
+                    </span>
+                    <Typography variant="body2" sx={{ fontWeight: isActive ? 600 : 500, color: "inherit" }}>
+                      {item.label}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Stack>
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 };
+
+function groupBySection(items: readonly NavItem[]): Array<{ name: string; items: NavItem[] }> {
+  const order: string[] = [];
+  const map = new Map<string, NavItem[]>();
+  for (const item of items) {
+    if (!map.has(item.section)) {
+      map.set(item.section, []);
+      order.push(item.section);
+    }
+    map.get(item.section)!.push(item);
+  }
+  return order.map((name) => ({ name, items: map.get(name)! }));
+}

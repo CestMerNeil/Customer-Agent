@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Alert,
   Box,
   Button,
   Card,
@@ -17,6 +16,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useAsync } from "../useAsync";
+import { tokens } from "../../theme";
+import { FieldRow, SectionLabel } from "../SettingsKit";
 
 export const AccountManager: React.FC = () => {
   const [username, setUsername] = useState("");
@@ -32,32 +33,59 @@ export const AccountManager: React.FC = () => {
   };
 
   return (
-    <Stack spacing={2.5}>
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3 }}>
-          <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5} sx={{ alignItems: { lg: "flex-end" } }}>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h6">拼多多会话入口</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 560 }}>
-                登录后会提取店铺、客服身份和 Cookie，并把会话状态写入本地加密存储。
-              </Typography>
-            </Box>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} sx={{ minWidth: { lg: 620 } }}>
-              <TextField size="small" label="账号" value={username} onChange={(event) => setUsername(event.target.value)} />
-              <TextField size="small" label="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+    <Box sx={{ maxWidth: 980 }}>
+      <Stack spacing={3}>
+        <Box>
+          <SectionLabel>添加账号</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 1 }}>
+              <FieldRow label="账号">
+                <TextField fullWidth size="small" value={username} onChange={(event) => setUsername(event.target.value)} />
+              </FieldRow>
+              <FieldRow label="密码" last>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </FieldRow>
+            </CardContent>
+            <Box
+              sx={{
+                px: 2.5,
+                py: 2,
+                borderTop: `1px solid ${tokens.color.border.hairline}`,
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+                flexWrap: "wrap",
+              }}
+            >
               <Button variant="contained" onClick={login} startIcon={<span className="material-symbols-outlined">login</span>}>
                 登录
               </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+              {message && (
+                <Typography
+                  variant="body2"
+                  sx={{ color: message.includes("成功") ? tokens.color.state.success : tokens.color.state.error }}
+                >
+                  {message}
+                </Typography>
+              )}
+            </Box>
+          </Card>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, px: 0.5 }}>
+            登录会打开受控浏览器；验证码、扫码或风控校验需人工完成。登录后会提取店铺与会话并写入本地加密存储。
+          </Typography>
+        </Box>
 
-      {message && <Alert severity={message.includes("成功") ? "success" : "error"}>{message}</Alert>}
-
-      <TableContainer component={Card} variant="outlined">
-        <Table>
-          <TableHead sx={{ bgcolor: "rgba(23, 33, 31, 0.04)" }}>
+        <Box>
+          <SectionLabel>账号列表</SectionLabel>
+          <TableContainer component={Card}>
+            <Table>
+          <TableHead sx={{ bgcolor: tokens.color.surface.sunken }}>
             <TableRow>
               <TableCell>账号名称</TableCell>
               <TableCell>所属店铺</TableCell>
@@ -106,31 +134,29 @@ export const AccountManager: React.FC = () => {
               </TableRow>
             )}
           </TableBody>
-        </Table>
-      </TableContainer>
+            </Table>
+          </TableContainer>
+        </Box>
 
-      <Alert severity="info" variant="outlined">
-        当前登录会打开受控浏览器；验证码、扫码或风控校验需要人工完成。
-      </Alert>
-
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            最近诊断
-          </Typography>
-          {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).slice(0, 5).map((log) => (
-            <Typography key={log.id} variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-              {new Date(log.createdAt).toLocaleString()} · {sanitizeDiagnosticText(log.message)}
-            </Typography>
-          ))}
-          {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).length === 0 && (
-            <Typography variant="body2" color="text.secondary">
-              暂无诊断记录。
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
-    </Stack>
+        <Box>
+          <SectionLabel>最近诊断</SectionLabel>
+          <Card>
+            <CardContent sx={{ px: 2.5, py: 2 }}>
+              {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).slice(0, 5).map((log) => (
+                <Typography key={log.id} variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                  {new Date(log.createdAt).toLocaleString()} · {sanitizeDiagnosticText(log.message)}
+                </Typography>
+              ))}
+              {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  暂无诊断记录。
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Box>
+      </Stack>
+    </Box>
   );
 };
 

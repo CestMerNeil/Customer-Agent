@@ -1,5 +1,9 @@
 import React from "react";
-import { AppBar, Toolbar, Typography, IconButton, Box } from "@mui/material";
+import { Box, IconButton, Stack, Typography } from "@mui/material";
+import { tokens } from "../../theme";
+import { SIDEBAR_WIDTH } from "./NavigationRail";
+
+export const TOOLBAR_HEIGHT = 52;
 
 interface TopAppBarProps {
   title: string;
@@ -7,56 +11,61 @@ interface TopAppBarProps {
 
 export const TopAppBar: React.FC<TopAppBarProps> = ({ title }) => {
   return (
-    <AppBar
-      position="fixed"
-      elevation={0}
+    <Box
+      component="header"
       sx={{
-        width: "calc(100% - 96px)",
-        ml: "96px",
-        bgcolor: "rgba(247, 248, 244, 0.86)",
-        color: "text.primary",
-        borderBottom: "1px solid",
-        borderColor: "divider",
-        backdropFilter: "blur(18px)",
+        position: "fixed",
+        top: 0,
+        left: SIDEBAR_WIDTH,
+        width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
+        height: TOOLBAR_HEIGHT,
+        zIndex: (theme) => theme.zIndex.appBar,
+        display: "flex",
+        alignItems: "center",
+        gap: 1.5,
+        px: 2.5,
+        bgcolor: tokens.color.surface.sidebar,
+        backdropFilter: "saturate(180%) blur(24px)",
+        WebkitBackdropFilter: "saturate(180%) blur(24px)",
+        borderBottom: `1px solid ${tokens.color.border.hairline}`,
+        WebkitAppRegion: "drag",
       }}
     >
-      <Toolbar sx={{ minHeight: "72px !important", gap: 2 }}>
-        <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="overline" color="text.secondary">
-            Live desk
-          </Typography>
-          <Typography variant="h6" component="h1" sx={{ lineHeight: 1.15 }}>
-            {title}
-          </Typography>
+      <Typography variant="h6" component="h1" sx={{ flexGrow: 1, fontWeight: 600 }}>
+        {title}
+      </Typography>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          alignItems: "center",
+          WebkitAppRegion: "no-drag",
+        }}
+      >
+        <Box
+          sx={{
+            display: { xs: "none", md: "flex" },
+            alignItems: "center",
+            gap: 0.75,
+            px: 1.25,
+            py: 0.5,
+            borderRadius: `${tokens.radius.pill}px`,
+            bgcolor: tokens.color.state.successSoft,
+            color: tokens.color.state.success,
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: tokens.color.state.success }} />
+          本地运行
         </Box>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Box
-            sx={{
-              display: { xs: "none", md: "flex" },
-              alignItems: "center",
-              gap: 1,
-              px: 1.5,
-              py: 0.75,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 1,
-              bgcolor: "background.paper",
-              color: "success.main",
-              fontSize: 13,
-              fontWeight: 700,
-            }}
-          >
-            <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "success.main" }} />
-            本地运行
-          </Box>
-          <IconButton color="inherit" aria-label="通知">
-            <span className="material-symbols-outlined">notifications</span>
-          </IconButton>
-          <IconButton color="inherit" aria-label="账户">
-            <span className="material-symbols-outlined">account_circle</span>
-          </IconButton>
-        </Box>
-      </Toolbar>
-    </AppBar>
+        <IconButton size="small" color="inherit" aria-label="通知">
+          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>notifications</span>
+        </IconButton>
+        <IconButton size="small" color="inherit" aria-label="账户">
+          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>account_circle</span>
+        </IconButton>
+      </Stack>
+    </Box>
   );
 };

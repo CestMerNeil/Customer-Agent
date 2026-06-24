@@ -16,12 +16,27 @@ import {
 import Grid from "@mui/material/Grid";
 import { useAsync } from "../useAsync";
 
-export const AutoReplyDashboard: React.FC = () => {
+interface AutoReplyDashboardProps {
+  onNavigate?: (id: string) => void;
+}
+
+export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNavigate }) => {
   const [health, setHealth] = useState<{ ok: boolean; worker: string } | null>(null);
   const accounts = useAsync(() => window.customerAgent.invoke("account.list", undefined), []);
   const messages = useAsync(() => window.customerAgent.invoke("message.list", { limit: 10 }), []);
   const drafts = useAsync(() => window.customerAgent.invoke("reply.draft.list", undefined), []);
   const logs = useAsync(() => window.customerAgent.invoke("log.list", { limit: 20 }), []);
+  const inference = useAsync(() => window.customerAgent.invoke("inference.health", undefined), []);
+
+  const refreshAll = () => {
+    void accounts.refresh();
+    void messages.refresh();
+    void drafts.refresh();
+    void logs.refresh();
+    void inference.refresh();
+  };
+
+  const modelReady = inference.data?.ok ?? false;
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -52,41 +67,38 @@ export const AutoReplyDashboard: React.FC = () => {
     <Box>
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, md: 7 }}>
-          <Card
-            variant="outlined"
-            sx={{
-              minHeight: 230,
-              bgcolor: "#17211f",
-              color: "#f5f7f2",
-              overflow: "hidden",
-              position: "relative",
-              "&::after": {
-                content: '""',
-                position: "absolute",
-                inset: "auto -12% -52% 36%",
-                height: 260,
-                background: "radial-gradient(circle, rgba(232, 196, 104, 0.35), transparent 62%)",
-              },
-            }}
-          >
-            <CardContent sx={{ position: "relative", zIndex: 1, p: 3 }}>
-              <Stack direction="row" spacing={1} sx={{ mb: 4, flexWrap: "wrap" }}>
-                <Chip label="Live intake" size="small" sx={{ bgcolor: "#e8c468", color: "#17211f", fontWeight: 800 }} />
+          <Card sx={{ minHeight: 230 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Stack direction="row" spacing={1} sx={{ mb: 3, flexWrap: "wrap" }}>
                 <Chip
-                  label={health?.ok ? "Worker ready" : "Worker unknown"}
+                  label="实时接入"
                   size="small"
-                  sx={{ color: "#f5f7f2", borderColor: "rgba(255,255,255,.32)" }}
+                  color="primary"
+                />
+                <Chip
+                  label={health?.ok ? "Worker 就绪" : "Worker 未知"}
+                  size="small"
+                  color={health?.ok ? "success" : "default"}
                   variant="outlined"
                 />
               </Stack>
               <Typography variant="h3" sx={{ maxWidth: 560 }}>
                 把店铺消息、知识命中和人工审核集中在一张工作台里。
               </Typography>
-              <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
-                <Button variant="contained" color="primary" startIcon={<span className="material-symbols-outlined">bolt</span>}>
+              <Stack direction="row" spacing={1.5} sx={{ mt: 3 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => onNavigate?.("review")}
+                  startIcon={<span className="material-symbols-outlined">bolt</span>}
+                >
                   查看待处理
                 </Button>
-                <Button variant="outlined" sx={{ color: "#f5f7f2", borderColor: "rgba(255,255,255,.28)" }}>
+                <Button
+                  variant="outlined"
+                  onClick={refreshAll}
+                  startIcon={<span className="material-symbols-outlined">refresh</span>}
+                >
                   刷新状态
                 </Button>
               </Stack>
@@ -131,11 +143,25 @@ export const AutoReplyDashboard: React.FC = () => {
                     <Typography color="text.secondary" variant="overline">
                       模型准备度
                     </Typography>
-                    <Chip size="small" color="warning" label="未就绪" variant="outlined" />
+                    <Chip
+                      size="small"
+                      color={inference.loading && !inference.data ? "default" : modelReady ? "success" : "warning"}
+                      label={inference.loading && !inference.data ? "检测中" : modelReady ? "已就绪" : "未就绪"}
+                      variant="outlined"
+                    />
                   </Stack>
-                  <LinearProgress variant="determinate" value={32} color="warning" sx={{ height: 8, borderRadius: 1, mb: 1.5 }} />
+                  <LinearProgress
+                    variant={inference.loading && !inference.data ? "indeterminate" : "determinate"}
+                    value={modelReady ? 100 : 0}
+                    color={modelReady ? "success" : "warning"}
+                    sx={{ height: 8, borderRadius: 1, mb: 1.5 }}
+                  />
                   <Typography variant="body2" color="text.secondary">
-                    配置 OpenAI 兼容 endpoint 后可进行健康检查。
+                    {modelReady
+                      ? "推理 endpoint 健康检查通过。"
+                      : inference.data?.error
+                        ? sanitizeDiagnosticText(inference.data.error)
+                        : "配置 OpenAI 兼容 endpoint 后可进行健康检查。"}
                   </Typography>
                 </CardContent>
               </Card>
