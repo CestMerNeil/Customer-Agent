@@ -1,0 +1,248 @@
+[
+  {
+    "capability": "pdd-real-merchant-operations",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "pass",
+    "actor": "operator",
+    "acceptedAt": "2026-06-26T07:39:09.169Z",
+    "evidenceSummary": "Operator-confirmed in local workspace: goods-card send reached the buyer via the live logged-in PDD page transport, and keyword/intent human-transfer moved the conversation to another customer-service account via move_conversation. Text send passed earlier. Not covered: formal login/session-extraction, start/stop, websocket receive, product list/detail capture.",
+    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+  },
+  {
+    "capability": "pdd-real-merchant-operations",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for pdd-real-merchant-operations.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "auditable-agent-workflow",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "pass",
+    "actor": "operator",
+    "acceptedAt": "2026-06-26T07:39:09.169Z",
+    "evidenceSummary": "Operator-confirmed: the Agent selected and executed real tools end to end (get_shop_products, send_goods_link with a real goods id, transfer_conversation) against the live shop. Policy-question and insufficient-knowledge paths not yet separately recorded.",
+    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+  },
+  {
+    "capability": "auditable-agent-workflow",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for auditable-agent-workflow.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "local-model-runtime-provisioning",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for local-model-runtime-provisioning.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "local-model-runtime-provisioning",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for local-model-runtime-provisioning.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "knowledge-product-governance",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "pass",
+    "actor": "operator",
+    "acceptedAt": "2026-06-26T07:39:09.169Z",
+    "evidenceSummary": "Operator-confirmed end to end with no issues: real product sync fetched the shop products and populated reviewed product knowledge, including the local multimodal image extraction the sync relies on; the synced products are available to the Agent for recommendation and goods-card send. Version, rollback, and disable governance paths not separately exercised.",
+    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+  },
+  {
+    "capability": "knowledge-product-governance",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for knowledge-product-governance.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "message-queue-concurrency",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for message-queue-concurrency.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "message-queue-concurrency",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for message-queue-concurrency.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "multi-shop-operations",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for multi-shop-operations.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "multi-shop-operations",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for multi-shop-operations.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "desktop-operations-workspace",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for desktop-operations-workspace.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "desktop-operations-workspace",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for desktop-operations-workspace.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "real-acceptance-release-gates",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for real-acceptance-release-gates.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "real-acceptance-release-gates",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for real-acceptance-release-gates.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "secret-safety-governance",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for secret-safety-governance.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  },
+  {
+    "capability": "secret-safety-governance",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-b",
+    "shopAlias": "shop-b",
+    "outcome": "blocked",
+    "actor": "generated",
+    "acceptedAt": "1970-01-01T00:00:00.000Z",
+    "evidenceSummary": "Awaiting real acceptance for secret-safety-governance.",
+    "blockers": [
+      "real-acceptance-not-recorded"
+    ]
+  }
+]

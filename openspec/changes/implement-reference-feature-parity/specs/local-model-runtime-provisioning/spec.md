@@ -7,8 +7,27 @@ The system SHALL preserve local-model operation as a first-class supported infer
 - **GIVEN** the operator selects the managed local inference profile
 - **AND** the required local runtime and model are available or provisionable
 - **WHEN** the Agent generates a reply, summarizes memory, or creates embeddings
-- **THEN** the request is served through the local OpenAI-compatible endpoint started by the desktop app
+- **THEN** the request is served through the managed local runtime owned by the desktop app
 - **AND** the acceptance record includes the local runtime name, runtime version, model identifier, model checksum or manifest version, platform, and commit SHA
+
+### Requirement: Responses API-Compatible Runtime Contract
+The system SHALL use a Responses API-compatible model contract for both local and remote inference providers.
+
+#### Scenario: Agent uses model tools
+- **GIVEN** the Agent needs model-driven tool use
+- **WHEN** it sends a request to either a local runtime or a remote model provider
+- **THEN** the request uses the same Responses-style contract for messages, tool definitions, tool calls, tool outputs, and final responses
+- **AND** the Agent does not depend on model-authored plain-text JSON as the primary tool-call mechanism
+
+#### Scenario: Local runtime candidate lacks required Responses behavior
+- **GIVEN** a local runtime candidate is being evaluated
+- **WHEN** it cannot natively support the required tool-call round trip, tool-result continuation, final response, or required multimodal input behavior
+- **THEN** the runtime candidate is rejected or marked blocked for the affected capability
+- **AND** the implementation evaluates or selects another runtime instead of hiding the gap behind prompt-only JSON parsing inside the Agent
+
+#### Scenario: Runtime selection is recorded
+- **WHEN** a local runtime is approved for release
+- **THEN** the model/runtime manifest records the runtime name, version, supported Responses contract features, unsupported features, model formats, platform support, license constraints, and acceptance evidence references
 
 ### Requirement: Managed Runtime Provisioning
 The system SHALL provide a managed runtime provisioning path that does not require the user to install `llama-server`, Ollama, LM Studio, Python, or other external LLM tools manually.

@@ -6,10 +6,24 @@ The system SHALL provide a multi-turn Agent that can call real tools, append too
 #### Scenario: Tool call loop completes
 - **WHEN** the LLM requests one or more supported tools
 - **THEN** the Agent executes the real tools, appends sanitized tool results, and continues until it returns a final answer or reaches the configured loop limit
+- **AND** tool calls and tool results are exchanged through the shared Responses API-compatible model contract, not through model-authored plain-text JSON parsed from a normal assistant message
 
 #### Scenario: Loop limit is reached
 - **WHEN** the Agent reaches the maximum tool-call loop count
 - **THEN** it stops further tool execution, asks the model for a final response based on gathered information, and records a loop-limit audit event
+
+### Requirement: Reference-Equivalent Agent Message Construction
+The system SHALL construct Agent requests in the same business shape as the reference Agent while preserving the Electron + TypeScript architecture.
+
+#### Scenario: Product context is available before recommendation
+- **WHEN** a buyer asks for a product recommendation, comparison, or help choosing what to buy
+- **THEN** the Agent includes a current shop-scoped product-list context or performs the equivalent `get_shop_products` tool step before producing the final reply
+- **AND** the final reply is grounded in real reviewed product knowledge and real goods IDs
+
+#### Scenario: Tool protocol is provider-independent
+- **WHEN** the Agent runs against a local runtime or a remote model provider
+- **THEN** it uses the same internal Response model events for function calls, tool outputs, citations, and final text
+- **AND** provider-specific differences are isolated in the model runtime layer rather than in Agent business logic
 
 ### Requirement: Required Agent tools
 The system SHALL implement the real tools `get_shop_products`, `send_goods_link`, `get_product_knowledge`, `search_customer_service_knowledge`, and `transfer_conversation`.

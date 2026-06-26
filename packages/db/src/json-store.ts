@@ -23,9 +23,10 @@ interface StoreData {
 }
 
 const defaultSettings: AppSettings = {
-  replyMode: "human_review",
   businessHours: { start: "08:00", end: "23:00" },
   knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+  queue: { maxConcurrentConversations: 2, maxAttempts: 3, baseBackoffMs: 5_000, paused: false },
+  handoff: { keywords: [], intentRules: [] },
 };
 
 export class JsonAppStore {
@@ -157,6 +158,28 @@ export class JsonAppStore {
       ...settings,
       businessHours: { ...this.data.settings.businessHours, ...settings.businessHours },
       knowledge: { ...this.data.settings.knowledge, ...settings.knowledge },
+      queue: {
+        maxConcurrentConversations:
+          settings.queue?.maxConcurrentConversations
+          ?? this.data.settings.queue?.maxConcurrentConversations
+          ?? defaultSettings.queue?.maxConcurrentConversations
+          ?? 2,
+        maxAttempts:
+          settings.queue?.maxAttempts
+          ?? this.data.settings.queue?.maxAttempts
+          ?? defaultSettings.queue?.maxAttempts
+          ?? 3,
+        baseBackoffMs:
+          settings.queue?.baseBackoffMs
+          ?? this.data.settings.queue?.baseBackoffMs
+          ?? defaultSettings.queue?.baseBackoffMs
+          ?? 5_000,
+        paused: settings.queue?.paused ?? this.data.settings.queue?.paused ?? false,
+      },
+      handoff: {
+        keywords: settings.handoff?.keywords ?? this.data.settings.handoff?.keywords ?? [],
+        intentRules: settings.handoff?.intentRules ?? this.data.settings.handoff?.intentRules ?? [],
+      },
       ...(settings.inferenceRuntime ? { inferenceRuntime: { ...this.data.settings.inferenceRuntime, ...settings.inferenceRuntime } } : {}),
     };
     await this.persist();

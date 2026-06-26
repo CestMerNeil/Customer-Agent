@@ -43,6 +43,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Secret leak scan
+        run: pnpm security:leak-scan
+
+      - name: Local model manifest
+        run: pnpm local-model:validate
+
       - name: Build
         run: pnpm build
 

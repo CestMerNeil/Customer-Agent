@@ -28,6 +28,9 @@ pnpm exec openspec status --change implement-reference-feature-parity
 pnpm exec openspec validate implement-reference-feature-parity --strict
 pnpm acceptance:generate -- --commit <sha> --out acceptance/skeleton.json
 pnpm acceptance:validate -- --file acceptance/skeleton.json --commit <sha>
+pnpm pdd:calibration:template -- --commit <sha> --out calibration/<sha>.json
+pnpm pdd:calibration:validate -- --file calibration/<sha>.json --commit <sha>
+pnpm pdd:calibration:summarize -- --file calibration/<sha>.json --out calibration-summary/<sha>.json
 ```
 
 ## GitHub Actions

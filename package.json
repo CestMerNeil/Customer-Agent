@@ -11,7 +11,14 @@
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
     "acceptance:generate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs generate",
-    "acceptance:validate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs validate"
+    "acceptance:validate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs validate",
+    "security:leak-scan": "pnpm --filter @customer-agent/core build && node scripts/secret-leak-scan.mjs",
+    "local-model:validate": "pnpm --filter @customer-agent/core build && node scripts/local-model-manifest.mjs",
+    "local-model:probe": "pnpm --filter @customer-agent/inference build && node scripts/local-model-capability-probe.mjs",
+    "release:gate": "pnpm --filter @customer-agent/core build && node scripts/release-gate.mjs",
+    "pdd:calibration:template": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs template",
+    "pdd:calibration:validate": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs validate",
+    "pdd:calibration:summarize": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs summarize"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

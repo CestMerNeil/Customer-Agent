@@ -74,17 +74,6 @@ const releaseCapabilityMatrix: AcceptanceCapabilityMatrixRow[] = [
 const allowedCapabilities = new Set<AcceptanceCapability>(releaseCapabilityMatrix.map((row) => row.capability));
 const allowedOutcomes = new Set<AcceptanceOutcome>(["pass", "fail", "blocked"]);
 const allowedActors = new Set<AcceptanceActor>(["generated", "operator", "ci"]);
-const disallowedSensitivePatterns = [
-  /\bcookie\b/i,
-  /\btoken\b/i,
-  /\bapi[-_ ]?key\b/i,
-  /\bpassword\b/i,
-  /\banti[-_]?content\b/i,
-  /\braw\s+payload\b/i,
-  /\braw\s+buyer\b/i,
-  /1[3-9]\d{9}/,
-];
-
 export function createDefaultAcceptanceScopes(): AcceptanceScopeAlias[] {
   return [
     { accountAlias: "pdd-account-a", shopAlias: "shop-a" },
@@ -199,5 +188,6 @@ function flattenRecordText(record: AcceptanceRecord): Record<string, string> {
 }
 
 function containsSensitiveData(value: string): boolean {
-  return disallowedSensitivePatterns.some((pattern) => pattern.test(value));
+  return containsSensitiveText(value);
 }
+import { containsSensitiveText } from "./redaction.js";

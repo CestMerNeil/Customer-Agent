@@ -9,6 +9,10 @@ interface RootLayoutProps {
   activeNavId: string;
   onNavSelect: (id: string) => void;
   title: string;
+  inferenceStatus: {
+    label: string;
+    tone: "success" | "error" | "neutral";
+  };
 }
 
 export const RootLayout: React.FC<RootLayoutProps> = ({
@@ -17,11 +21,12 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
   activeNavId,
   onNavSelect,
   title,
+  inferenceStatus,
 }) => {
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <NavigationRail items={navItems} activeId={activeNavId} onSelect={onNavSelect} />
-      <TopAppBar title={title} />
+      <TopAppBar title={title} inferenceStatus={inferenceStatus} />
       <Box
         component="main"
         sx={{

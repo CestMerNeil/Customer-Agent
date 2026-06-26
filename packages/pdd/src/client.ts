@@ -14,9 +14,9 @@ export class PddHttpClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  async postJson<TResponse = unknown>(url: string, body: unknown): Promise<TResponse> {
+  async postJson<TResponse = unknown>(url: string, body: unknown, options: { headers?: Record<string, string> } = {}): Promise<TResponse> {
     return this.post<TResponse>(url, {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...options.headers },
       body: JSON.stringify(body),
     });
   }

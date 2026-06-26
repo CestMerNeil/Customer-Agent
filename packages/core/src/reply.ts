@@ -1,4 +1,4 @@
-export type ReplyMode = "automatic" | "human_review";
+export type ReplyMode = "automatic";
 
 export type ReplyAction = "send" | "review" | "escalate" | "fallback";
 

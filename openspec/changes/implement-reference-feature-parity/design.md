@@ -50,13 +50,19 @@ The Agent should expose the same business tools as the reference app, but implem
 
 Alternative considered: current single RAG prompt. Rejected because it cannot send goods cards, transfer conversations, use product/customer-service stores separately, or explain multi-step decisions.
 
-### 5. Preserve local LLM as a product advantage
+### 5. Preserve local LLM as a product advantage through a Responses API runtime contract
 
-The current Electron app already has a local OpenAI-compatible runtime path around `llama-server`, app-managed model files, and inference settings. This capability must be preserved and elevated from a configurable developer/operator feature into a productized local inference profile. The target state is not "the user installs a separate LLM tool"; the target state is that the app can provision a reviewed platform runtime and model itself, verify integrity, start the local endpoint, and expose health/recovery states.
+The current Electron app has experimented with a local `llama-server` runtime, app-managed model files, and inference settings. This capability must be preserved as a product advantage, but `llama-server` is not the architecture boundary. The architecture boundary is a Responses API-compatible model runtime contract used by both local and remote providers.
+
+The target state is not "the user installs a separate LLM tool" and not "the Agent parses model-authored JSON from plain text." The target state is that the app can provision a reviewed platform runtime and model itself, verify integrity, start a local endpoint, and expose health/recovery states while the Agent talks to all model providers through the same Responses-style interface: input messages, tool definitions, function/tool calls, function/tool outputs, multimodal inputs where supported, and final responses.
+
+If the selected local runtime cannot natively satisfy the required Responses API behavior, including tool-call round trips needed by the Agent, the implementation SHALL replace that runtime candidate instead of adding fragile prompt-only, text-JSON, or model-specific compatibility layers inside the Agent.
 
 Alternative considered: require users to install Ollama, LM Studio, llama.cpp, or another model tool before using the app. Rejected because it keeps the largest product differentiator dependent on manual setup and creates support variance across macOS and Windows.
 
 Alternative considered: bundle every runtime and default model inside the installer. Partially accepted only where licensing, size, and distribution limits make sense. The default design is first-launch or first-use automatic download from a checksummed manifest, because quantized local models can make installers very large.
+
+Alternative considered: keep `llama-server` as mandatory and hide missing Responses behavior behind an adapter that asks the model to emit JSON tool calls in natural-language completions. Rejected because real testing showed this makes Agent decisions brittle, allows product-recommendation turns to skip product tools, and diverges from the reference Agent's standard tool-call loop.
 
 ### 6. Knowledge is versioned and governed
 
@@ -105,11 +111,14 @@ For PDD capabilities whose account permission or endpoint behavior is unknown, i
 2. Remove Mock Pinduoduo and Seam A/B/C scripts, tests, docs, package scripts, and existing archived spec requirements from active completion contracts.
 3. Add real PDD calibration scripts and sanitized evidence schema.
 4. Implement and verify PDD HTTP/WebSocket live operations before Agent, queue, and UI rely on them.
-5. Implement persistent queue/concurrency and Agent tools behind typed service interfaces.
-6. Add product/customer-service knowledge governance and product sync.
-7. Build the operations UI and acceptance/release status surfaces.
-8. Add GitHub Actions release gates and artifact publishing.
-9. Complete real PDD merchant acceptance for all must capabilities before marking the change complete.
+5. Define and validate the Responses API-compatible model runtime contract before further Agent parity work.
+6. Evaluate local runtime candidates against the contract; replace `llama-server` if it cannot satisfy the required native tool-call, tool-result, and multimodal behavior.
+7. Rebuild the Agent loop to match the reference architecture on top of the Responses contract, with real tools and product-list context rather than prompt-only JSON parsing.
+8. Implement persistent queue/concurrency and Agent tools behind typed service interfaces.
+9. Add product/customer-service knowledge governance and product sync.
+10. Build the operations UI and acceptance/release status surfaces.
+11. Add GitHub Actions release gates and artifact publishing.
+12. Complete real PDD merchant acceptance for all must capabilities before marking the change complete.
 
 Rollback strategy: each stage should keep the app launchable. If a live PDD feature regresses, disable only the affected capability for the shop/account and surface a release-blocking diagnostic; do not restore mock acceptance as a fallback.
 
@@ -117,5 +126,5 @@ Rollback strategy: each stage should keep the app launchable. If a live PDD feat
 
 - Acceptance will use two real Pinduoduo accounts supplied by the user. The implementation SHALL generate low-sensitive aliases, shop aliases, acceptance skeletons, capability matrices, and test-run labels itself, using defaults such as `pdd-account-a`, `pdd-account-b`, `shop-a`, and `shop-b` unless the operator overrides them locally.
 - Real credentials, real login completion, and authorization to send messages or goods cards cannot be generated. They are provided only through the local app or calibration flow and are never requested in chat, committed to Git, or sent to CI.
-- The local model baseline is a small Gemma-family multimodal candidate with first-launch automatic download. Remaining detail needed: exact model ID, license, checksum, runtime compatibility, and whether one profile covers chat/embedding/multimodal or a local model chain is required.
+- The local model baseline is a small Gemma-family multimodal candidate with first-launch automatic download. Remaining detail needed: exact model ID, license, checksum, runtime compatibility, whether one profile covers chat/embedding/multimodal or a local model chain is required, and whether the selected local runtime satisfies the Responses API-compatible Agent contract without fragile prompt-only tool emulation.
 - GitHub Releases are the production distribution channel for this change. Code signing, notarization, and signed auto-update credentials are deferred.

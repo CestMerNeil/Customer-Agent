@@ -36,9 +36,20 @@ function assertMacSigningEnv() {
   }
 }
 
+function assertNoPddCredentialsInCi() {
+  const disallowed = Object.keys(process.env).filter((key) => /^PDD_|PINDUODUO_/i.test(key));
+  if (disallowed.length > 0) {
+    fail(`PDD credentials/session material must not be configured in CI: ${disallowed.sort().join(", ")}.`);
+  }
+}
+
 const nonProductionCi = isNonProductionCi();
 const packagingMode = process.env.ELECTRON_PACKAGE_MODE ?? "production";
 const platform = process.env.ELECTRON_BUILDER_PLATFORM ?? process.platform;
+
+if (process.env.GITHUB_ACTIONS === "true" || process.env.CI === "true") {
+  assertNoPddCredentialsInCi();
+}
 
 if (!nonProductionCi) {
   assertProductionUpdateUrl();

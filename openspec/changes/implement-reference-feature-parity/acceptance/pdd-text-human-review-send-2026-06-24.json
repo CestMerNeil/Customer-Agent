@@ -1,0 +1,14 @@
+[
+  {
+    "capability": "pdd-real-merchant-operations",
+    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "platform": "darwin-arm64",
+    "accountAlias": "pdd-account-a",
+    "shopAlias": "shop-a",
+    "outcome": "pass",
+    "actor": "operator",
+    "acceptedAt": "2026-06-24T10:27:50Z",
+    "evidenceSummary": "Real PDD text message human-review send path passed in local workspace. Baseline messages 31 to 32, drafts 19 to 20. New message type text reached sent state; related draft reached sent state. Knowledge documents count was 0. No private message text or session material recorded.",
+    "notes": "Provisional workspace evidence only. Repeat after committing before using as release-gate evidence. Covered path: receive real text message, generate local-model draft, operator review, send reply. Not covered: image send, goods card send, transfer, product list, product detail."
+  }
+]

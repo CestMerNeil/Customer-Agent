@@ -273,6 +273,3 @@ export function makeTheme(mode: Mode): Theme {
     },
   });
 }
-
-const theme = makeTheme("light");
-export default theme;

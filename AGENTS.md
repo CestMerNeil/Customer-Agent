@@ -19,6 +19,7 @@ release gates, not by mock logs or fixture-driven tests.
 | Unit/helper tests | `pnpm test` or targeted package tests | Pure helpers and local deterministic state | Inner loop while editing |
 | Build/package smoke | `pnpm build`, desktop smoke/package commands | Local build/runtime/package health | Before release gates |
 | Real acceptance | Sanitized acceptance records | PDD, LLM, Agent tools, product sync, handoff, queue, multi-shop, release | Required before business tasks are complete |
+| PDD calibration | `pnpm pdd:calibration:template` / `pnpm pdd:calibration:validate` / `pnpm pdd:calibration:summarize` | Reference comparison + real endpoint status, parsed field maps, blocked reason taxonomy, no-secrets evidence | When opening new PDD endpoint evidence and before marking PDD tasks complete |
 
 ## What must not be used
 

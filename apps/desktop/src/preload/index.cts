@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { IpcChannel, IpcRequest, IpcResponse } from "@customer-agent/core";
+import type { IpcChannel, IpcRequest, IpcResponse, ModelDownloadProgressEvent, ProductSyncProgress } from "@customer-agent/core";
+
+type RendererEventMap = {
+  "inference.modelscope.download.progress": ModelDownloadProgressEvent;
+  "product.sync.progress": ProductSyncProgress;
+};
 
 const api = {
   invoke<TChannel extends IpcChannel>(
@@ -7,6 +12,14 @@ const api = {
     request: IpcRequest<TChannel>,
   ): Promise<IpcResponse<TChannel>> {
     return ipcRenderer.invoke(channel, request) as Promise<IpcResponse<TChannel>>;
+  },
+  on<TChannel extends keyof RendererEventMap>(
+    channel: TChannel,
+    listener: (payload: RendererEventMap[TChannel]) => void,
+  ): () => void {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: RendererEventMap[TChannel]) => listener(payload);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.off(channel, wrapped);
   },
 };
 

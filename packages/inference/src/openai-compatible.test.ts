@@ -64,6 +64,63 @@ describe("OpenAICompatibleClient", () => {
     await expect(client.chat("请回答")).rejects.toThrow(/finish_reason=length/);
   });
 
+  it("checks chat health without requiring an embedding model", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "OK" } }] }),
+    });
+    const client = new OpenAICompatibleClient(
+      {
+        baseUrl: "http://localhost:8000/v1",
+        chatModel: "gemma",
+      },
+      fetchMock,
+    );
+
+    await expect(client.healthCheck()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/chat/completions",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("sends multimodal chat messages with text and image content parts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "{\"brand\":\"云织\"}" } }] }),
+    });
+    const client = new OpenAICompatibleClient(
+      {
+        baseUrl: "http://localhost:8000/v1",
+        chatModel: "gemma-vision",
+      },
+      fetchMock,
+    );
+
+    await expect(client.chatMultimodal({
+      system: "提取商品知识",
+      text: "商品名称：围巾",
+      imageUrls: ["https://img.example/a.jpg"],
+      responseFormat: "json_object",
+    })).resolves.toBe("{\"brand\":\"云织\"}");
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      model: "gemma-vision",
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "提取商品知识" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "商品名称：围巾" },
+            { type: "image_url", image_url: { url: "https://img.example/a.jpg" } },
+          ],
+        },
+      ],
+    });
+  });
+
   it("returns embeddings from OpenAI compatible responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -79,5 +136,117 @@ describe("OpenAICompatibleClient", () => {
     );
 
     await expect(client.embed("退货规则")).resolves.toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("uses native chat-completions tools for Agent calls", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{
+              id: "call-1",
+              type: "function",
+              function: {
+                name: "get_shop_products",
+                arguments: "{\"query\":\"推荐\"}",
+              },
+            }],
+          },
+        }],
+      }),
+    });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma" },
+      fetchMock,
+    );
+
+    await expect(client.respond({
+      instructions: "客服 Agent",
+      input: "买家想买东西",
+      tools: [{
+        type: "function",
+        name: "get_shop_products",
+        description: "获取商品列表",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      }],
+    })).resolves.toMatchObject({
+      toolCalls: [{
+        id: "call-1",
+        callId: "call-1",
+        name: "get_shop_products",
+        arguments: { query: "推荐" },
+      }],
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      model: "gemma",
+      tool_choice: "auto",
+      tools: [{
+        type: "function",
+        function: {
+          name: "get_shop_products",
+          description: "获取商品列表",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+        },
+      }],
+    });
+  });
+
+  it("continues chat-completions tool loops with role tool messages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: "call-1",
+                type: "function",
+                function: { name: "get_shop_products", arguments: "{}" },
+              }],
+            },
+          }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "您好，可以看这款商品。" } }] }),
+      });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma" },
+      fetchMock,
+    );
+
+    const first = await client.respond({
+      instructions: "客服 Agent",
+      input: "推荐商品",
+      tools: [{
+        type: "function",
+        name: "get_shop_products",
+        description: "获取商品列表",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      }],
+    });
+    expect(first.responseId).toBeTruthy();
+    await expect(client.respond({
+      instructions: "客服 Agent",
+      previousResponseId: first.responseId ?? "",
+      input: [{ type: "function_call_output", call_id: "call-1", output: "{\"ok\":true}" }],
+      tools: [],
+    })).resolves.toMatchObject({
+      outputText: "您好，可以看这款商品。",
+      toolCalls: [],
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "assistant", tool_calls: expect.any(Array) }),
+      { role: "tool", tool_call_id: "call-1", content: "{\"ok\":true}" },
+    ]));
   });
 });

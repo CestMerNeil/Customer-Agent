@@ -8,7 +8,17 @@ export type {
 export type {
   AccountRecord,
   AccountStatus,
+  AgentAuditEventType,
+  AgentAuditRecord,
   AppSettings,
+  ConversationMemoryRecord,
+  GovernedKnowledgeKind,
+  GovernedKnowledgeRecord,
+  GovernedKnowledgeReviewState,
+  GovernedKnowledgeSourceType,
+  InboundQueueMetrics,
+  InboundQueueRecord,
+  InboundQueueState,
   InferenceConfig,
   InferenceRuntimeConfig,
   KnowledgeDocumentRecord,
@@ -17,6 +27,11 @@ export type {
   LogLevel,
   LogRecord,
   MessageRecord,
+  ModelProviderMode,
+  ProductSyncFailure,
+  ProductSyncMode,
+  ProductSyncPhase,
+  ProductSyncProgress,
   ReplyDraftRecord
 } from "./domain.js";
 export type {
@@ -27,6 +42,7 @@ export type {
 } from "./reply.js";
 export { canTransitionMessageState } from "./message-state.js";
 export type { MessageState } from "./message-state.js";
+export { DEFAULT_HANDOFF_KEYWORDS } from "./domain.js";
 export {
   buildDefaultAcceptanceSkeleton,
   createDefaultAcceptanceScopes,
@@ -34,6 +50,31 @@ export {
   validateAcceptanceRecord,
   validateAcceptanceRecordSet
 } from "./acceptance.js";
+export {
+  buildDefaultPddCalibrationSkeleton,
+  summarizePddCalibrationRecords,
+  validatePddCalibrationRecord,
+  validatePddCalibrationRecordSet
+} from "./calibration.js";
+export {
+  createDefaultLocalRuntimeConfig,
+  getDefaultLocalModelProfile,
+  getLocalModelProfileForRuntime,
+  isLegacyDefaultLocalModelId,
+  localModelProfiles,
+  normalizeLocalRuntimeConfig,
+  runtimeConfigSupportsLocalCapability,
+  validateLocalModelProfiles
+} from "./local-model-profiles.js";
+export {
+  DependencyGovernor,
+  createDefaultDependencyPolicies
+} from "./dependency-governance.js";
+export {
+  containsSensitiveText,
+  redactSensitiveText,
+  scanSensitiveText
+} from "./redaction.js";
 export type {
   AcceptanceActor,
   AcceptanceCapability,
@@ -47,6 +88,18 @@ export type {
   ValidateAcceptanceRecordSetRequest
 } from "./acceptance.js";
 export type {
+  BuildPddCalibrationSkeletonRequest,
+  PddCalibrationActor,
+  AntiContentHandling,
+  BrowserHeaderProfile,
+  FailureSignature,
+  PddCalibrationPurpose,
+  PddCalibrationRecord,
+  PddCalibrationStatus,
+  PddCalibrationSummary,
+  PddCalibrationValidationResult
+} from "./calibration.js";
+export type {
   AccountLoginRequest,
   AccountLoginResult,
   GenerateReplyRequest,
@@ -54,5 +107,24 @@ export type {
   IpcChannel,
   IpcContract,
   IpcRequest,
-  IpcResponse
+  IpcResponse,
+  ModelDownloadProgressEvent
 } from "./ipc.js";
+export type {
+  LocalModelCapability,
+  LocalModelFormat,
+  LocalModelProfile,
+  LocalModelProfileValidationResult,
+  LocalModelSource
+} from "./local-model-profiles.js";
+export type {
+  CircuitState,
+  DependencyDecision,
+  DependencyId,
+  DependencyPolicy,
+  DependencySnapshot
+} from "./dependency-governance.js";
+export type {
+  RedactionIssue,
+  RedactionScanResult
+} from "./redaction.js";
