@@ -1,19 +1,19 @@
 [
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
     "outcome": "pass",
     "actor": "operator",
-    "acceptedAt": "2026-06-26T07:39:09.169Z",
-    "evidenceSummary": "Operator-confirmed in local workspace: goods-card send reached the buyer via the live logged-in PDD page transport, and keyword/intent human-transfer moved the conversation to another customer-service account via move_conversation. Text send passed earlier. Not covered: formal login/session-extraction, start/stop, websocket receive, product list/detail capture.",
-    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+    "acceptedAt": "2026-06-26T08:34:15.992Z",
+    "evidenceSummary": "Operator-confirmed on a real merchant account: goods-card send reaches the buyer via the live logged-in PDD page transport, and keyword/intent handoff transfers the conversation to another customer-service account via move_conversation. Text send verified earlier. Not yet recorded: formal login/session-extraction, account start/stop, websocket receive capture, product list/detail capture.",
+    "notes": "Operator workspace evidence on the implementation commit. Single shop (shop-a) only — two-shop isolation not yet covered. The after-hours human-offline notice path is new and not separately verified. Re-verify on packaged macOS/Windows artifacts before final release."
   },
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -27,19 +27,19 @@
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
     "outcome": "pass",
     "actor": "operator",
-    "acceptedAt": "2026-06-26T07:39:09.169Z",
-    "evidenceSummary": "Operator-confirmed: the Agent selected and executed real tools end to end (get_shop_products, send_goods_link with a real goods id, transfer_conversation) against the live shop. Policy-question and insufficient-knowledge paths not yet separately recorded.",
-    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+    "acceptedAt": "2026-06-26T08:34:15.992Z",
+    "evidenceSummary": "Operator-confirmed: the Agent selects and executes real tools end to end (get_shop_products, send_goods_link with a real goods id, transfer_conversation) against the live shop. Policy-question and insufficient-knowledge paths not yet separately recorded.",
+    "notes": "Operator workspace evidence on the implementation commit. Single shop (shop-a) only — two-shop isolation not yet covered. The after-hours human-offline notice path is new and not separately verified. Re-verify on packaged macOS/Windows artifacts before final release."
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -53,7 +53,7 @@
   },
   {
     "capability": "local-model-runtime-provisioning",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -67,7 +67,7 @@
   },
   {
     "capability": "local-model-runtime-provisioning",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -81,19 +81,19 @@
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
     "outcome": "pass",
     "actor": "operator",
-    "acceptedAt": "2026-06-26T07:39:09.169Z",
+    "acceptedAt": "2026-06-26T08:34:15.992Z",
     "evidenceSummary": "Operator-confirmed end to end with no issues: real product sync fetched the shop products and populated reviewed product knowledge, including the local multimodal image extraction the sync relies on; the synced products are available to the Agent for recommendation and goods-card send. Version, rollback, and disable governance paths not separately exercised.",
-    "notes": "Provisional workspace evidence only. Verified against the uncommitted local working tree; current HEAD does not yet contain the goods-card transport, human-transfer wiring, or related fixes. Single shop (shop-a) only. Re-record against the commit SHA after committing before using as release-gate evidence."
+    "notes": "Operator workspace evidence on the implementation commit. Single shop (shop-a) only — two-shop isolation not yet covered. The after-hours human-offline notice path is new and not separately verified. Re-verify on packaged macOS/Windows artifacts before final release."
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -107,7 +107,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -121,7 +121,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -135,7 +135,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -149,7 +149,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -163,7 +163,7 @@
   },
   {
     "capability": "desktop-operations-workspace",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -177,7 +177,7 @@
   },
   {
     "capability": "desktop-operations-workspace",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -191,7 +191,7 @@
   },
   {
     "capability": "real-acceptance-release-gates",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -205,7 +205,7 @@
   },
   {
     "capability": "real-acceptance-release-gates",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
@@ -219,7 +219,7 @@
   },
   {
     "capability": "secret-safety-governance",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-a",
     "shopAlias": "shop-a",
@@ -233,7 +233,7 @@
   },
   {
     "capability": "secret-safety-governance",
-    "commitSha": "0683082172e56f5d79d5df76df52df0427973132",
+    "commitSha": "afa4eec70b64266964d68e2464121a75abd57bce",
     "platform": "darwin-arm64",
     "accountAlias": "pdd-account-b",
     "shopAlias": "shop-b",
