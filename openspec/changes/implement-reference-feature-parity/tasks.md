@@ -146,7 +146,7 @@
 - [x] 14.4 Fail release when acceptance evidence does not cover the release commit/tag and required capability matrix.
 - [x] 14.5 Validate local runtime/model manifests, checksums, license metadata, platform compatibility, and packaged provisioning smoke results.
 - [x] 14.6 Publish release artifacts to GitHub Releases only after all release gates pass.
-- [ ] 14.7 Verify a tagged release dry run and a real release run.
+- [x] 14.7 Verify a tagged release dry run and a real release run.
 
 ## 15. Final Parity Closeout
 

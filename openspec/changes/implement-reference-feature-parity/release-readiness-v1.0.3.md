@@ -49,5 +49,7 @@ with the reference project.
 ## Residual scope
 
 - Code signing and macOS notarization are deferred from the first parity release.
-- GitHub Release publication itself is still pending until the `v1.0.3` tag is
-  created and the `Build Desktop` workflow publishes macOS and Windows assets.
+- GitHub Release `v1.0.3` was published by Build Desktop run `28641413650`:
+  `https://github.com/CestMerNeil/Customer-Agent/releases/tag/v1.0.3`.
+- Published assets are limited to macOS/Windows packages, update metadata,
+  blockmaps, and platform checksum files.

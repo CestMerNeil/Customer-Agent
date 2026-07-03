@@ -55,7 +55,7 @@
 | 11.7 全页面标准状态 | UI 验收 | [ ] Pass [ ] Fail [ ] Blocked |
 | 11.8 macOS/Windows 交互验收 | 包验收 | [ ] Pass [ ] Fail [ ] Blocked |
 | 13.5 release-blocking 记录 | 证据汇总 | [ ] Pass [ ] Fail [ ] Blocked |
-| 14.7 tagged release 演练 | GitHub Release | [ ] Pass [ ] Fail [ ] Blocked |
+| 14.7 tagged release 演练 | GitHub Release | [x] Pass [ ] Fail [ ] Blocked |
 | 15.4 最终参考对照 | 代码/文档审计 | [ ] Pass [ ] Fail [ ] Blocked |
 | 15.5 最终打包真实验收 | 真实验收 | [ ] Pass [ ] Fail [ ] Blocked |
 | 15.6 readiness 总结 | 文档 | [ ] Pass [ ] Fail [ ] Blocked |
@@ -248,7 +248,7 @@
 
 成功框：
 
-- [ ] acceptance records 覆盖当前 commit/tag。
-- [ ] GitHub Release 产物包含 macOS 和 Windows。
-- [ ] release gate 不接受 stale evidence。
-- [ ] 最终总结列出 Pass/Blocked/残余范围。
+- [x] acceptance records 覆盖当前 commit/tag。
+- [x] GitHub Release 产物包含 macOS 和 Windows。
+- [x] release gate 不接受 stale evidence。
+- [x] 最终总结列出 Pass/Blocked/残余范围。
