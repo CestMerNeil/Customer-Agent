@@ -500,6 +500,10 @@ function isWithinBusinessHours(receivedAt: string, hours: { start: string; end: 
 }
 
 function minutesOfDay(value: string): number | undefined {
+  const wallClock = /T(\d{2}):(\d{2})(?::\d{2}(?:\.\d{1,3})?)?[+-]\d{2}:\d{2}$/u.exec(value);
+  if (wallClock?.[1] && wallClock[2]) {
+    return Number(wallClock[1]) * 60 + Number(wallClock[2]);
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return undefined;
