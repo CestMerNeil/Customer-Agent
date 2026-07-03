@@ -17,10 +17,10 @@
     "smoke:runtime:packaged": "node scripts/smoke-packaged-runtime.mjs",
     "smoke:dev": "pnpm run build:deps && node scripts/dev.mjs --smoke",
     "package:mac": "pnpm run playwright:install && pnpm run preflight:release && pnpm run build && electron-builder --mac",
-    "package:mac:ci": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
+    "package:mac:ci": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
     "package:win": "pnpm run playwright:install && pnpm run preflight:release && pnpm run build && electron-builder --win",
-    "package:win:ci": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && electron-builder --win nsis zip --publish never",
-    "package:dir": "CI_NON_PRODUCTION=true pnpm run playwright:install && CI_NON_PRODUCTION=true pnpm run preflight:release && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
+    "package:win:ci": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && electron-builder --win nsis zip --publish never",
+    "package:dir": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
   },
   "dependencies": {
     "@customer-agent/agents": "workspace:*",

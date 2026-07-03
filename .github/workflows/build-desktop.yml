@@ -102,10 +102,7 @@ jobs:
           APP_PACKAGED=true RESOURCES_PATH="$resources_path" pnpm --filter @customer-agent/desktop smoke:runtime:packaged
 
       - name: Generate checksums
-        shell: bash
-        run: |
-          cd apps/desktop/release
-          shasum -a 256 * > "checksums-${{ matrix.platform }}.txt"
+        run: pnpm --filter @customer-agent/desktop exec node scripts/generate-checksums.mjs --platform "${{ matrix.platform }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
