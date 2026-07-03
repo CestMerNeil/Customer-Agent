@@ -76,7 +76,7 @@ Never persist:
 - login and session extraction
 - user info and shop info
 - chat token retrieval
-- online/offline status
+- online/busy/offline customer-service status
 - WebSocket receive
 - text send
 - image send where supported

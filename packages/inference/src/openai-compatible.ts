@@ -2,7 +2,6 @@ export interface InferenceConfig {
   baseUrl: string;
   apiKey?: string;
   chatModel: string;
-  embeddingModel?: string;
   temperature?: number;
   maxTokens?: number;
 }
@@ -120,24 +119,6 @@ export class OpenAICompatibleClient {
       ...(outputText ? { outputText } : {}),
       toolCalls: extractChatToolCalls(choice),
     };
-  }
-
-  async embed(text: string): Promise<number[]> {
-    if (!this.config.embeddingModel?.trim()) {
-      throw new Error("OpenAI compatible endpoint 未配置 embeddingModel");
-    }
-    const response = await this.fetchImpl(`${this.baseUrl}/embeddings`, {
-      method: "POST",
-      headers: this.headers,
-      body: JSON.stringify({ model: this.config.embeddingModel, input: text }),
-    });
-    await assertOk(response);
-    const data = await response.json() as { data?: Array<{ embedding?: number[] }> };
-    const embedding = data.data?.[0]?.embedding;
-    if (!embedding) {
-      throw new Error("Embedding response did not include an embedding");
-    }
-    return embedding;
   }
 
   private get baseUrl(): string {

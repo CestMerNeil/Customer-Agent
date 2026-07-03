@@ -36,6 +36,31 @@ describe("PddApi", () => {
     await expect(api.getUserInfo()).rejects.toThrow("会话已过期（43001）");
   });
 
+  it("maps customer-service availability to PDD status codes", async () => {
+    const postJson = vi.fn().mockResolvedValue({ success: true });
+    const api = new PddApi({ http: { postForm: vi.fn(), postJson, postEmptyJson: vi.fn() } });
+
+    await api.setOnlineStatus("online");
+    await api.setOnlineStatus("busy");
+    await api.setOnlineStatus("offline");
+
+    expect(postJson).toHaveBeenNthCalledWith(
+      1,
+      "https://mms.pinduoduo.com/plateau/chat/set_csstatus",
+      { data: { cmd: "set_csstatus", status: "1" }, client: "WEB" },
+    );
+    expect(postJson).toHaveBeenNthCalledWith(
+      2,
+      "https://mms.pinduoduo.com/plateau/chat/set_csstatus",
+      { data: { cmd: "set_csstatus", status: "0" }, client: "WEB" },
+    );
+    expect(postJson).toHaveBeenNthCalledWith(
+      3,
+      "https://mms.pinduoduo.com/plateau/chat/set_csstatus",
+      { data: { cmd: "set_csstatus", status: "3" }, client: "WEB" },
+    );
+  });
+
   it("constructs text send payload", async () => {
     const postJson = vi.fn().mockResolvedValue({ success: true, result: { msg_id: "sent-1" } });
     const api = new PddApi({ http: { postForm: vi.fn(), postJson, postEmptyJson: vi.fn() }, requestId: () => "req-1" });

@@ -64,9 +64,22 @@ describe("AccountManager", () => {
     const invoke = mockBridge();
     render(<AccountManager />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
+    fireEvent.click(await screen.findByRole("button", { name: "退出" }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("account.logout", { accountId: "account-a" }));
     expect(await screen.findByText("账号已退出登录")).toBeInTheDocument();
+  });
+
+  it("lets operators set shop customer-service availability", async () => {
+    const invoke = mockBridge();
+    render(<AccountManager />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "忙碌" }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("account.availability.set", {
+      accountId: "account-a",
+      status: "busy",
+    }));
+    expect(await screen.findByText("接待状态已切换为忙碌")).toBeInTheDocument();
   });
 });

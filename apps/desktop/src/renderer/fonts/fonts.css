@@ -1,0 +1,19 @@
+/* Self-hosted fonts so Windows/macOS/Linux render identically, matching the
+   Customer Agent App design spec exactly: Manrope for UI/body, Space Grotesk
+   for tabular numeral displays. Vendored variable woff2; OFL licensed. */
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("./manrope-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("./space-grotesk-latin-wght-normal.woff2") format("woff2-variations");
+}

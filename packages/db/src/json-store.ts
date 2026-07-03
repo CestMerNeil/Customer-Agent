@@ -3,7 +3,6 @@ import path from "node:path";
 import type {
   AccountRecord,
   AppSettings,
-  KnowledgeDocumentRecord,
   LogLevel,
   LogRecord,
   MessageRecord,
@@ -17,14 +16,13 @@ interface StoreData {
   accounts: AccountRecord[];
   messages: MessageRecord[];
   drafts: ReplyDraftRecord[];
-  knowledgeDocuments: KnowledgeDocumentRecord[];
   logs: LogRecord[];
   settings: AppSettings;
 }
 
 const defaultSettings: AppSettings = {
   businessHours: { start: "08:00", end: "23:00" },
-  knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+  knowledge: { topK: 4 },
   queue: { maxConcurrentConversations: 2, maxAttempts: 3, baseBackoffMs: 5_000, paused: false },
   handoff: { keywords: [], intentRules: [] },
 };
@@ -44,7 +42,6 @@ export class JsonAppStore {
         accounts: parsed.accounts ?? [],
         messages: parsed.messages ?? [],
         drafts: parsed.drafts ?? [],
-        knowledgeDocuments: parsed.knowledgeDocuments ?? [],
         logs: parsed.logs ?? [],
         settings: { ...defaultSettings, ...parsed.settings },
       });
@@ -53,7 +50,6 @@ export class JsonAppStore {
         accounts: [],
         messages: [],
         drafts: [],
-        knowledgeDocuments: [],
         logs: [],
         settings: defaultSettings,
       });
@@ -133,19 +129,6 @@ export class JsonAppStore {
 
   async getDraft(draftId: string): Promise<ReplyDraftRecord | undefined> {
     return this.data.drafts.find((draft) => draft.id === draftId);
-  }
-
-  async saveKnowledgeDocument(document: KnowledgeDocumentRecord): Promise<KnowledgeDocumentRecord> {
-    this.data.knowledgeDocuments = this.data.knowledgeDocuments.filter((item) => item.id !== document.id);
-    this.data.knowledgeDocuments.push(document);
-    await this.persist();
-    return document;
-  }
-
-  async listKnowledgeDocuments(options: { scope?: string; shopId?: string } = {}): Promise<KnowledgeDocumentRecord[]> {
-    return this.data.knowledgeDocuments.filter(
-      (document) => (!options.scope || document.scope === options.scope) && (!options.shopId || document.shopId === options.shopId),
-    );
   }
 
   async getSettings(): Promise<AppSettings> {

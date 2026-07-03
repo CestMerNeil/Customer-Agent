@@ -1,6 +1,8 @@
 import React from "react";
-import { Box, Button, Card, CardContent, Chip, Divider, IconButton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import { Box, InputBase, Stack, Typography } from "@mui/material";
 import { useAsync } from "../useAsync";
+import { tokens } from "../../theme";
+import { Hero, Pill } from "../mistral";
 
 export const AgentAuditViewer: React.FC = () => {
   const [shopId, setShopId] = React.useState("");
@@ -11,70 +13,105 @@ export const AgentAuditViewer: React.FC = () => {
     ...(messageId.trim() ? { messageId: messageId.trim() } : {}),
   }), [shopId, messageId]);
   const records = audit.data?.records ?? [];
+
+  const filterInput = {
+    height: 34,
+    px: "12px",
+    border: "1px solid #e0e0e0",
+    borderRadius: "9px",
+    fontSize: 12,
+    fontWeight: 500,
+    width: 120,
+    "& input": { p: 0 },
+    "& input::placeholder": { color: tokens.color.text.tertiary, opacity: 1 },
+  } as const;
+
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ mb: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Box>
-            <Typography variant="h6">Agent 审计</Typography>
-            <Typography variant="body2" color="text.secondary">
-              最近 100 条工具调用、结果、引用与最终回复事件。
-            </Typography>
+    <Box>
+      <Box sx={{ mb: "22px" }}>
+        <Hero
+          title="AI 处理记录"
+          subtitle="最近 100 条工具调用、结果、引用与最终回复事件"
+          actions={
+            <Stack direction="row" spacing={1}>
+              <InputBase placeholder="店铺" value={shopId} onChange={(event) => setShopId(event.target.value)} sx={filterInput} />
+              <InputBase placeholder="消息 ID" value={messageId} onChange={(event) => setMessageId(event.target.value)} sx={filterInput} />
+            </Stack>
+          }
+        />
+      </Box>
+
+      {audit.error ? (
+        <Typography color="error">{audit.error}</Typography>
+      ) : (
+        <Box>
+          <Box
+            sx={{
+              display: "flex",
+              p: "9px 2px",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: ".1em",
+              color: tokens.color.text.tertiary,
+              borderBottom: `1px solid ${tokens.color.text.primary}`,
+            }}
+          >
+            <Box sx={{ width: 64 }}>时间</Box>
+            <Box sx={{ width: 110 }}>消息</Box>
+            <Box sx={{ width: 90 }}>事件</Box>
+            <Box sx={{ width: 150 }}>工具</Box>
+            <Box sx={{ width: 64 }}>状态</Box>
+            <Box sx={{ flex: 1 }}>摘要</Box>
           </Box>
-          <Stack direction="row" spacing={1}>
-            <TextField size="small" label="店铺" value={shopId} onChange={(event) => setShopId(event.target.value)} />
-            <TextField size="small" label="消息ID" value={messageId} onChange={(event) => setMessageId(event.target.value)} />
-            <Button size="small" variant="outlined" onClick={() => { setShopId(""); setMessageId(""); }}>清空</Button>
-            <IconButton size="small" onClick={audit.refresh} aria-label="刷新 Agent 审计">
-              <span className="material-symbols-outlined">refresh</span>
-            </IconButton>
-          </Stack>
+          {records.map((record, index) => (
+            <Box
+              key={record.id}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                p: "12px 2px",
+                borderBottom: index === records.length - 1 ? "none" : "1px solid #f0f0f0",
+              }}
+            >
+              <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2" }}>
+                {new Date(record.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </Typography>
+              <Typography noWrap sx={{ width: 110, fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#525252", pr: 1 }}>
+                {record.messageId}
+              </Typography>
+              <Typography sx={{ width: 90, fontSize: 11, fontWeight: 600 }}>{eventLabel(record.eventType)}</Typography>
+              <Typography
+                noWrap
+                sx={{ width: 150, fontSize: 12, fontWeight: 500, color: record.toolName ? "#525252" : tokens.color.text.tertiary, pr: 1 }}
+              >
+                {record.toolName ?? "—"}
+              </Typography>
+              <Box sx={{ width: 64 }}>
+                {record.ok === undefined ? (
+                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>—</Typography>
+                ) : (
+                  <Pill label={record.ok ? "成功" : "失败"} tone={record.ok ? "success" : "error"} />
+                )}
+              </Box>
+              <Typography noWrap sx={{ flex: 1, fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>
+                {record.summary}
+                {record.citations.length > 0 ? ` · 引用 ${record.citations.length} 条` : ""}
+              </Typography>
+            </Box>
+          ))}
+          {!audit.loading && records.length === 0 && (
+            <Typography sx={{ p: "22px 2px", fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>
+              暂无 AI 处理记录
+            </Typography>
+          )}
+          {audit.loading && (
+            <Typography sx={{ p: "22px 2px", fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>
+              正在读取 AI 处理记录…
+            </Typography>
+          )}
         </Box>
-        <Divider sx={{ mb: 2 }} />
-        {audit.error ? (
-          <Typography color="error">{audit.error}</Typography>
-        ) : (
-          <TableContainer sx={{ maxHeight: 560, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-            <Table stickyHeader size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: 170 }}>时间</TableCell>
-                  <TableCell sx={{ width: 150 }}>消息</TableCell>
-                  <TableCell sx={{ width: 120 }}>事件</TableCell>
-                  <TableCell sx={{ width: 170 }}>工具</TableCell>
-                  <TableCell sx={{ width: 90 }}>状态</TableCell>
-                  <TableCell>摘要</TableCell>
-                  <TableCell sx={{ width: 180 }}>引用</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {records.map((record) => (
-                  <TableRow key={record.id} hover>
-                    <TableCell>{new Date(record.createdAt).toLocaleString()}</TableCell>
-                    <TableCell>{record.messageId}</TableCell>
-                    <TableCell>{eventLabel(record.eventType)}</TableCell>
-                    <TableCell>{record.toolName ?? "—"}</TableCell>
-                    <TableCell>
-                      {record.ok === undefined ? "—" : (
-                        <Chip size="small" label={record.ok ? "成功" : "失败"} color={record.ok ? "success" : "error"} variant="outlined" />
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: "normal", wordBreak: "break-word" }}>{record.summary}</TableCell>
-                    <TableCell>{record.citations.map((citation) => `${citation.documentId}/${citation.chunkId}`).join("\n") || "—"}</TableCell>
-                  </TableRow>
-                ))}
-                {!audit.loading && records.length === 0 && (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>暂无 Agent 审计记录。</TableCell></TableRow>
-                )}
-                {audit.loading && (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>正在读取 Agent 审计...</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </Box>
   );
 };
 

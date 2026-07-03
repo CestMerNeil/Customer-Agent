@@ -1,27 +1,27 @@
 import React, { useEffect, useState } from "react";
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Divider,
-  LinearProgress,
-  List,
-  ListItem,
-  ListItemText,
-  Stack,
-  Typography,
-} from "@mui/material";
-import Grid from "@mui/material/Grid";
+import { Box, Button, Stack, Typography } from "@mui/material";
+import type { MessageState } from "@customer-agent/core";
+import { tokens } from "../../theme";
+import { EmptyState, Hero, Panel, Pill, Stat, StatRow } from "../mistral";
 import { useAsync } from "../useAsync";
 
 interface AutoReplyDashboardProps {
   onNavigate?: (id: string) => void;
 }
 
+/** Design row pill: message state → label + tone. */
+const statePill: Partial<Record<MessageState, { label: string; tone: "outline" | "success" | "dark" | "neutral" | "error" }>> = {
+  received: { label: "待审核", tone: "outline" },
+  generating: { label: "待审核", tone: "outline" },
+  draft_ready: { label: "待审核", tone: "outline" },
+  sent: { label: "AI 已回复", tone: "success" },
+  escalated: { label: "转人工", tone: "dark" },
+  ignored: { label: "已忽略", tone: "neutral" },
+  failed: { label: "失败", tone: "error" },
+};
+
 export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNavigate }) => {
-  const [health, setHealth] = useState<{ ok: boolean; worker: string } | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const accounts = useAsync(() => window.customerAgent.invoke("account.list", undefined), []);
   const messages = useAsync(() => window.customerAgent.invoke("message.list", { limit: 10 }), []);
   const drafts = useAsync(() => window.customerAgent.invoke("reply.draft.list", undefined), []);
@@ -39,18 +39,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
   const modelReady = inference.data?.ok ?? false;
 
   useEffect(() => {
-    const checkHealth = async () => {
-      try {
-        const result = await window.customerAgent.invoke("app.health", undefined);
-        setHealth(result);
-      } catch (error) {
-        console.error("Health check failed:", error);
-        setHealth({ ok: false, worker: "error" });
-      }
-    };
-
-    void checkHealth();
-    const interval = setInterval(() => void checkHealth(), 10000);
+    const interval = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -58,246 +47,191 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
   const accountCount = accounts.data?.accounts.length ?? 0;
   const draftItems = drafts.data?.drafts ?? [];
   const pendingDraftCount = draftItems.filter((draft) => draft.state === "draft_ready" || draft.state === "failed").length;
+  const sentDraftCount = draftItems.filter((draft) => draft.state === "sent").length;
   const ignoredDraftCount = draftItems.filter((draft) => draft.state === "ignored").length;
   const escalatedDraftCount = draftItems.filter((draft) => draft.state === "escalated").length;
+  const autoReplyRate = draftItems.length ? Math.round((sentDraftCount / draftItems.length) * 100) : 0;
   const recentMessages = messages.data?.messages ?? [];
-  const recentDrafts = draftItems.slice(0, 5);
+  const diagnostics = (logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).slice(0, 3);
 
   return (
     <Box>
-      <Grid container spacing={2.5}>
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Card sx={{ minHeight: 230 }}>
-            <CardContent sx={{ p: 3 }}>
-              <Stack direction="row" spacing={1} sx={{ mb: 3, flexWrap: "wrap" }}>
-                <Chip
-                  label="实时接入"
-                  size="small"
-                  color="primary"
-                />
-                <Chip
-                  label={health?.ok ? "Worker 就绪" : "Worker 未知"}
-                  size="small"
-                  color={health?.ok ? "success" : "default"}
-                  variant="outlined"
-                />
-              </Stack>
-              <Typography variant="h3" sx={{ maxWidth: 560 }}>
-                把店铺消息、知识命中和人工审核集中在一张工作台里。
+      <Box sx={{ mb: "22px" }}>
+        <Hero
+          title="实时工作台"
+          subtitle={`今日 ${now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`}
+          actions={
+            <>
+              <Button variant="outlined" onClick={refreshAll}>
+                刷新
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => onNavigate?.("queue")}
+                startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18 }}>arrow_forward</span>}
+              >
+                查看待处理 · {pendingDraftCount}
+              </Button>
+            </>
+          }
+        />
+      </Box>
+
+      <Box sx={{ mb: 3 }}>
+        <StatRow>
+          <Stat
+            label="在线账号"
+            value={onlineCount}
+            suffix={
+              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 16, color: "#c2c2c2", ml: "-2px" }}>
+                /{accountCount}
               </Typography>
-              <Stack direction="row" spacing={1.5} sx={{ mt: 3 }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => onNavigate?.("review")}
-                  startIcon={<span className="material-symbols-outlined">bolt</span>}
-                >
-                  查看待处理
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={refreshAll}
-                  startIcon={<span className="material-symbols-outlined">refresh</span>}
-                >
-                  刷新状态
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Typography color="text.secondary" gutterBottom variant="overline">
-                    运行账号
-                  </Typography>
-                  <Typography variant="h4">{onlineCount} 个在线</Typography>
-                  <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
-                    已配置账号 {accountCount} 个
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Typography color="text.secondary" gutterBottom variant="overline">
-                    应用状态
-                  </Typography>
-                  <Typography variant="h4" color={health?.ok ? "success.main" : "error.main"}>
-                    {health ? (health.ok ? "正常" : "异常") : "连接中"}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
-                    Worker: {health?.worker ?? "未知"}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-                    <Typography color="text.secondary" variant="overline">
-                      模型准备度
-                    </Typography>
-                    <Chip
-                      size="small"
-                      color={inference.loading && !inference.data ? "default" : modelReady ? "success" : "warning"}
-                      label={inference.loading && !inference.data ? "检测中" : modelReady ? "已就绪" : "未就绪"}
-                      variant="outlined"
-                    />
-                  </Stack>
-                  <LinearProgress
-                    variant={inference.loading && !inference.data ? "indeterminate" : "determinate"}
-                    value={modelReady ? 100 : 0}
-                    color={modelReady ? "success" : "warning"}
-                    sx={{ height: 8, borderRadius: 1, mb: 1.5 }}
-                  />
-                  <Typography variant="body2" color="text.secondary">
-                    {modelReady
-                      ? "推理 endpoint 健康检查通过。"
-                      : inference.data?.error
-                        ? sanitizeDiagnosticText(inference.data.error)
-                        : "配置 OpenAI 兼容 endpoint 后可进行健康检查。"}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography color="text.secondary" gutterBottom variant="overline">
-                    最近诊断
-                  </Typography>
-                  <Stack spacing={1}>
-                    {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).slice(0, 3).map((log) => (
-                      <Box key={log.id}>
-                        <Typography variant="body2">{sanitizeDiagnosticText(log.message)}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(log.createdAt).toLocaleString()}
-                        </Typography>
-                      </Box>
-                    ))}
-                    {(logs.data?.logs ?? []).filter((log) => log.message.startsWith("诊断[")).length === 0 && (
-                      <Typography variant="body2" color="text.secondary">
-                        暂无诊断记录。
-                      </Typography>
-                    )}
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-                <Typography variant="h6">最近消息流水</Typography>
-                <Chip size="small" label={`待审核草稿 ${pendingDraftCount}`} color={pendingDraftCount ? "warning" : "default"} />
-              </Stack>
-              <Divider sx={{ mb: 2 }} />
-              <List>
-                {recentMessages.length === 0 ? (
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemText
-                      primary={messages.loading ? "正在读取消息..." : "暂无真实消息"}
-                      secondary={messages.loading ? "正在同步本地消息库。" : "启动拼多多账号后会在这里显示。"}
-                    />
-                  </ListItem>
-                ) : recentMessages.map((message) => (
-                  <React.Fragment key={message.id}>
-                    <ListItem sx={{ px: 0 }}>
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                            <Typography variant="subtitle2">{message.buyerNickname ?? message.buyerId}</Typography>
-                            <Chip label={message.state} size="small" variant="outlined" />
-                          </Stack>
-                        }
-                        secondary={message.content}
-                      />
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(message.receivedAt).toLocaleTimeString()}
-                      </Typography>
-                    </ListItem>
-                    <Divider component="li" />
-                  </React.Fragment>
-                ))}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                今日队列
+            }
+          />
+          <Stat
+            label="待审核草稿"
+            value={pendingDraftCount}
+            suffix={
+              pendingDraftCount > 0 ? (
+                <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: tokens.color.state.success, alignSelf: "center", ml: "2px" }} />
+              ) : undefined
+            }
+          />
+          <Stat label="今日已回复" value={sentDraftCount} />
+          <Stat
+            label="AI 自动率"
+            value={autoReplyRate}
+            suffix={
+              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 18, color: "#c2c2c2", ml: "-4px" }}>
+                %
               </Typography>
-              <Stack spacing={2} sx={{ mt: 2, mb: 2 }}>
-                  {[
-                  ["新消息", recentMessages.length],
-                  ["待审核", pendingDraftCount],
-                  ["已忽略", ignoredDraftCount],
-                  ["已升级", escalatedDraftCount],
-                  ["在线账号", onlineCount],
-                ].map(([label, value]) => (
-                  <Box key={label} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Typography color="text.secondary">{label}</Typography>
-                    <Typography variant="h5">{value}</Typography>
+            }
+          />
+        </StatRow>
+      </Box>
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.8fr) minmax(0, 1fr)" },
+          gap: 4,
+          alignItems: "start",
+        }}
+      >
+        <Panel
+          title="最近消息流水"
+          action={
+            <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: ".14em", color: tokens.color.text.tertiary }}>
+              近 10 条 · 实时
+            </Typography>
+          }
+          flushBody
+        >
+          {recentMessages.length === 0 ? (
+            <EmptyState
+              primary={messages.loading ? "正在读取消息…" : "暂无真实消息"}
+              secondary={messages.loading ? "正在同步本地消息库。" : "启动拼多多账号后会在这里显示。"}
+            />
+          ) : (
+            recentMessages.map((message, index) => {
+              const pill = statePill[message.state] ?? { label: message.state, tone: "outline" as const };
+              return (
+                <Box
+                  key={message.id}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    p: "13px 2px",
+                    borderBottom: index === recentMessages.length - 1 ? "none" : "1px solid #f0f0f0",
+                  }}
+                >
+                  <Typography sx={{ fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#c2c2c2", width: 38, flex: "none" }}>
+                    {new Date(message.receivedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                  </Typography>
+                  <Typography noWrap sx={{ fontSize: 13, fontWeight: 600, width: 100, flex: "none" }}>
+                    {message.buyerNickname ?? message.buyerId}
+                  </Typography>
+                  <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary, flex: 1, minWidth: 0 }}>
+                    {message.content}
+                  </Typography>
+                  <Box sx={{ flex: "none" }}>
+                    <Pill label={pill.label} tone={pill.tone} />
                   </Box>
-                ))}
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                当前是空数据状态，接入真实店铺后这里会变成实时工作队列。
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+                </Box>
+              );
+            })
+          )}
+        </Panel>
 
-        <Grid size={{ xs: 12 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                最近草稿记录
+        <Box>
+          <Panel title="队列概览">
+            <Stack spacing="13px" sx={{ mb: "26px" }}>
+              {([
+                ["新消息", recentMessages.length, tokens.color.text.primary],
+                ["待审核", pendingDraftCount, tokens.color.text.primary],
+                ["已升级", escalatedDraftCount, tokens.color.text.primary],
+                ["已忽略", ignoredDraftCount, tokens.color.text.tertiary],
+              ] as const).map(([label, value, color]) => (
+                <Box key={label} sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: "#525252" }}>{label}</Typography>
+                  <Typography sx={{ fontFamily: tokens.font.display, fontWeight: 500, fontSize: 17, color }}>{value}</Typography>
+                </Box>
+              ))}
+            </Stack>
+          </Panel>
+
+          <Panel
+            title="模型准备度"
+            action={
+              <Typography sx={{ fontSize: 10, fontWeight: 600, color: modelReady ? tokens.color.state.success : tokens.color.state.warning }}>
+                {inference.loading && !inference.data ? "检测中" : modelReady ? "已就绪" : "未就绪"}
               </Typography>
-              <List>
-                {recentDrafts.length === 0 ? (
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemText primary="暂无草稿记录" secondary="处理结果会在此保留发送、忽略、升级和失败历史。" />
-                  </ListItem>
-                ) : (
-                  recentDrafts.map((draft) => (
-                    <React.Fragment key={draft.id}>
-                      <ListItem sx={{ px: 0 }}>
-                        <ListItemText
-                          primary={
-                            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                              <Typography variant="subtitle2">{draft.id.slice(-8)}</Typography>
-                              <Chip label={draft.state} size="small" variant="outlined" />
-                            </Stack>
-                          }
-                          secondary={draft.reply.text}
-                        />
-                      </ListItem>
-                      <Divider component="li" />
-                    </React.Fragment>
-                  ))
-                )}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+            }
+          >
+            <Box sx={{ height: 4, borderRadius: "2px", bgcolor: "#f0f0f0", overflow: "hidden", mb: 1 }}>
+              <Box
+                sx={{
+                  width: modelReady ? "100%" : "0%",
+                  height: "100%",
+                  bgcolor: tokens.color.state.success,
+                  transition: "width .4s",
+                }}
+              />
+            </Box>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mb: 3 }}>
+              {modelReady
+                ? "本地模型 · 检查通过"
+                : inference.data?.error
+                  ? "AI 暂时不可用，请到模型页检查配置。"
+                  : "配置 OpenAI 兼容 endpoint 后可进行健康检查。"}
+            </Typography>
+          </Panel>
+
+          <Panel title="最近诊断">
+            {diagnostics.length === 0 ? (
+              <EmptyState primary="暂无诊断记录" secondary="运行时的健康检查与告警会在这里出现。" />
+            ) : (
+              diagnostics.map((log) => (
+                <Typography
+                  key={log.id}
+                  sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.5, color: "#525252", mb: 1 }}
+                >
+                  — {businessDiagnosticText(log.message)}
+                </Typography>
+              ))
+            )}
+          </Panel>
+        </Box>
+      </Box>
     </Box>
   );
 };
 
-function sanitizeDiagnosticText(value: string): string {
-  return value.replace(/^诊断\[[^\]]+\]\s*/u, "").replace(/\b(error|message)=/g, "").replace(/\s+/g, " ").trim();
+function businessDiagnosticText(value: string): string {
+  if (value.includes("pdd")) return "拼多多连接需要处理，请到账号页查看状态。";
+  if (value.includes("inference") || value.includes("model")) return "AI 服务需要处理，请到模型页查看状态。";
+  if (value.includes("product")) return "商品同步需要处理，请到知识库查看状态。";
+  return "有一项后台任务需要处理，请查看对应页面。";
 }

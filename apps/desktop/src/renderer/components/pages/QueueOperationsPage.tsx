@@ -1,35 +1,25 @@
 import React from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Divider,
-  IconButton,
-  MenuItem,
-  Select,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-} from "@mui/material";
-import Grid from "@mui/material/Grid";
+import { Alert, Box, Button, MenuItem, Select, Stack, Typography } from "@mui/material";
 import type { DependencySnapshot, InboundQueueRecord } from "@customer-agent/core";
+import { tokens } from "../../theme";
 import { useAsync } from "../useAsync";
+import { EmptyState, Hero, Panel, Pill, Stat, StatRow } from "../mistral";
 
 export const QueueOperationsPage: React.FC = () => {
   const [actionError, setActionError] = React.useState<string | undefined>();
   const [shopId, setShopId] = React.useState("");
+  const [paused, setPaused] = React.useState(false);
   const accounts = useAsync(() => window.customerAgent.invoke("account.list", undefined), []);
   const metrics = useAsync(() => window.customerAgent.invoke("queue.metrics", undefined), []);
   const queue = useAsync(() => window.customerAgent.invoke("queue.list", shopId ? { shopId } : undefined), [shopId]);
   const dependencies = useAsync(() => window.customerAgent.invoke("dependency.health", undefined), []);
+
+  React.useEffect(() => {
+    void window.customerAgent
+      .invoke("settings.get", undefined)
+      .then((response) => setPaused(Boolean(response.settings?.queue?.paused)))
+      .catch(() => {});
+  }, []);
 
   const refreshAll = () => {
     void metrics.refresh();
@@ -38,12 +28,14 @@ export const QueueOperationsPage: React.FC = () => {
   };
 
   const pauseQueue = async () => {
-    await window.customerAgent.invoke("queue.pause", undefined);
+    const result = await window.customerAgent.invoke("queue.pause", undefined);
+    setPaused(Boolean(result.settings?.queue?.paused ?? true));
     refreshAll();
   };
 
   const resumeQueue = async () => {
-    await window.customerAgent.invoke("queue.resume", undefined);
+    const result = await window.customerAgent.invoke("queue.resume", undefined);
+    setPaused(Boolean(result.settings?.queue?.paused ?? false));
     refreshAll();
   };
 
@@ -51,7 +43,7 @@ export const QueueOperationsPage: React.FC = () => {
     setActionError(undefined);
     const result = await window.customerAgent.invoke("queue.retryDeadLetters", undefined);
     if (!result.ok) {
-      setActionError(result.error ?? "重试死信失败");
+      setActionError("重试没有完成，请稍后再试。");
     }
     refreshAll();
   };
@@ -60,215 +52,281 @@ export const QueueOperationsPage: React.FC = () => {
   const items = queue.data?.items ?? [];
   const dependencyItems = dependencies.data?.dependencies ?? [];
 
+  const smallButton = {
+    height: 34,
+    minHeight: 34,
+    px: "12px",
+    fontSize: 12,
+    fontWeight: 600,
+    borderRadius: "9px",
+    gap: "6px",
+  } as const;
+
   return (
     <Box>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 2, justifyContent: "space-between" }}>
-        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-          <Chip size="small" color={(metric?.depth ?? 0) > 0 ? "warning" : "success"} label={`积压 ${metric?.depth ?? 0}`} />
-          <Chip size="small" variant="outlined" label={`重试 ${metric?.retryCount ?? 0}`} />
-          <Chip size="small" variant="outlined" color={(metric?.failureCount ?? 0) > 0 ? "error" : "default"} label={`失败 ${metric?.failureCount ?? 0}`} />
-        </Stack>
-        <Stack direction="row" spacing={1}>
-          <Select size="small" displayEmpty value={shopId} onChange={(event) => setShopId(event.target.value)} sx={{ minWidth: 220 }}>
-            <MenuItem value="">全部店铺</MenuItem>
-            {(accounts.data?.accounts ?? []).map((account) => (
-              <MenuItem key={account.id} value={account.shopId}>{account.shopName || account.username} · {account.shopId}</MenuItem>
-            ))}
-          </Select>
-          <Button variant="outlined" size="small" onClick={pauseQueue} startIcon={<span className="material-symbols-outlined">pause</span>}>
-            暂停队列
-          </Button>
-          <Button variant="outlined" size="small" onClick={resumeQueue} startIcon={<span className="material-symbols-outlined">play_arrow</span>}>
-            恢复队列
-          </Button>
-          <Button
-            variant="outlined"
-            color="warning"
-            size="small"
-            aria-label="重试死信"
-            disabled={(metric?.deadLetter ?? 0) === 0}
-            onClick={retryDeadLetters}
-            startIcon={<span className="material-symbols-outlined">replay</span>}
-          >
-            重试死信
-          </Button>
-          <IconButton size="small" onClick={refreshAll} aria-label="刷新队列">
-            <span className="material-symbols-outlined">refresh</span>
-          </IconButton>
-        </Stack>
-      </Stack>
+      <Box sx={{ mb: "22px" }}>
+        <Hero
+          title="消息工作流"
+          subtitle="本地持久化队列的真实处理状态、重试与依赖健康"
+          actions={
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <Select
+                size="small"
+                displayEmpty
+                value={shopId}
+                onChange={(event) => setShopId(event.target.value)}
+                sx={{
+                  height: 34,
+                  borderRadius: "9px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#525252",
+                  minWidth: 110,
+                }}
+              >
+                <MenuItem value="">全部店铺</MenuItem>
+                {(accounts.data?.accounts ?? []).map((account) => (
+                  <MenuItem key={account.id} value={account.shopId}>
+                    {account.shopName || account.username} · {account.shopId}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Button
+                variant="outlined"
+                onClick={pauseQueue}
+                sx={{ ...smallButton, bgcolor: paused ? "#f0f0f0" : "transparent" }}
+                startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>pause</span>}
+              >
+                暂停
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={resumeQueue}
+                sx={{ ...smallButton, bgcolor: paused ? "transparent" : "#f0f0f0" }}
+                startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>play_arrow</span>}
+              >
+                恢复
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={retryDeadLetters}
+                disabled={(metric?.deadLetter ?? 0) === 0}
+                sx={{
+                  ...smallButton,
+                  borderColor: "#f0d9a8",
+                  bgcolor: "#fffbf2",
+                  color: tokens.color.state.warning,
+                  "&:hover": { borderColor: "#f0d9a8", bgcolor: "#fdf3dd" },
+                }}
+                startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>replay</span>}
+              >
+                重试处理失败
+              </Button>
+            </Stack>
+          }
+        />
+      </Box>
 
       {(actionError || metrics.error || queue.error || dependencies.error) && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {actionError ?? metrics.error ?? queue.error ?? dependencies.error}
+          {actionError ?? "消息工作流暂时无法更新，请稍后重试。"}
         </Alert>
       )}
 
-      <Grid container spacing={2.5}>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6">队列指标</Typography>
-              <Divider sx={{ my: 2 }} />
-              <Grid container spacing={2}>
-                {[
-                  ["积压深度", metric?.depth ?? 0],
-                  ["待处理", metric?.pending ?? 0],
-                  ["处理中", metric?.processing ?? 0],
-                  ["等待重试", metric?.retryWaiting ?? 0],
-                  ["已完成", metric?.completed ?? 0],
-                  ["死信", metric?.deadLetter ?? 0],
-                ].map(([label, value]) => (
-                  <Grid key={label} size={{ xs: 6, sm: 4 }}>
-                    <Typography variant="overline" color="text.secondary">{label}</Typography>
-                    <Typography variant="h4">{value}</Typography>
-                  </Grid>
-                ))}
-              </Grid>
-              <Stack direction="row" spacing={1.5} sx={{ mt: 2, flexWrap: "wrap" }}>
-                <Chip size="small" variant="outlined" label={`平均处理 ${formatDuration(metric?.averageProcessingLatencyMs ?? 0)}`} />
-                <Chip size="small" variant="outlined" label={`最老待处理 ${formatDuration(metric?.oldestPendingAgeMs ?? 0)}`} />
-                <Chip size="small" variant="outlined" label={`下次重试 ${metric?.nextRetryAt ? new Date(metric.nextRetryAt).toLocaleString() : "无"}`} />
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
+      <Box sx={{ mb: "14px" }}>
+        <StatRow>
+          <Stat compact label="积压深度" value={metric?.depth ?? 0} tone={(metric?.depth ?? 0) > 0 ? "warning" : "default"} />
+          <Stat compact label="待处理" value={metric?.pending ?? 0} />
+          <Stat compact label="处理中" value={metric?.processing ?? 0} tone="accent" />
+          <Stat compact label="等待重试" value={metric?.retryWaiting ?? 0} />
+          <Stat compact label="已完成" value={metric?.completed ?? 0} />
+          <Stat compact label="处理失败" value={metric?.deadLetter ?? 0} tone={(metric?.deadLetter ?? 0) > 0 ? "error" : "default"} />
+        </StatRow>
+      </Box>
 
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6">依赖健康</Typography>
-              <Divider sx={{ my: 2 }} />
-              <Stack spacing={1.5}>
-                {dependencyItems.map((item) => (
-                  <DependencyRow key={item.id} item={item} />
-                ))}
-                {!dependencies.loading && dependencyItems.length === 0 && (
-                  <Typography variant="body2" color="text.secondary">暂无依赖健康快照。</Typography>
-                )}
-                {dependencies.loading && (
-                  <Typography variant="body2" color="text.secondary">正在读取依赖健康...</Typography>
-                )}
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
+      <Typography
+        sx={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: paused ? tokens.color.state.warning : tokens.color.state.success,
+          mb: "10px",
+        }}
+      >
+        队列状态：{paused ? "已暂停" : "运行中"}
+      </Typography>
 
-        <Grid size={{ xs: 12 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6">消息工作流</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-                按本地持久化队列显示真实入站消息的处理状态、重试、失败原因和 Agent 动作入口。
-              </Typography>
-              <TableContainer sx={{ maxHeight: 560, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                <Table stickyHeader size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>入队时间</TableCell>
-                      <TableCell>店铺</TableCell>
-                      <TableCell>买家</TableCell>
-                      <TableCell>状态</TableCell>
-                      <TableCell>尝试</TableCell>
-                      <TableCell>可处理时间</TableCell>
-                      <TableCell>最后错误</TableCell>
-                      <TableCell>Agent 动作</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {items.map((item) => (
-                      <QueueRow key={item.id} item={item} />
-                    ))}
-                    {!queue.loading && items.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={8} align="center" sx={{ py: 5 }}>暂无队列记录。</TableCell>
-                      </TableRow>
-                    )}
-                    {queue.loading && (
-                      <TableRow>
-                        <TableCell colSpan={8} align="center" sx={{ py: 5 }}>正在读取队列...</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
+        {([
+          ["平均处理", formatDuration(metric?.averageProcessingLatencyMs ?? 0)],
+          ["最老待处理", formatDuration(metric?.oldestPendingAgeMs ?? 0)],
+          [
+            "下次重试",
+            metric?.nextRetryAt
+              ? new Date(metric.nextRetryAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+              : "无",
+          ],
+        ] as const).map(([label, value]) => (
+          <Typography
+            key={label}
+            component="span"
+            sx={{
+              fontSize: 11,
+              fontWeight: 500,
+              color: "#525252",
+              border: `1px solid ${tokens.color.border.hairline}`,
+              borderRadius: "999px",
+              p: "5px 11px",
+            }}
+          >
+            {label}{" "}
+            <Box component="b" sx={{ fontFamily: tokens.font.display, fontWeight: 600 }}>
+              {value}
+            </Box>
+          </Typography>
+        ))}
+      </Stack>
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "minmax(0, 2.2fr) minmax(0, 1fr)" },
+          gap: 4,
+          alignItems: "start",
+        }}
+      >
+        <Panel title="消息工作流" flushBody>
+          <Box
+            sx={{
+              display: "flex",
+              p: "9px 2px",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: ".1em",
+              color: tokens.color.text.tertiary,
+              borderBottom: "1px solid #f0f0f0",
+            }}
+          >
+            <Box sx={{ width: 64 }}>入队</Box>
+            <Box sx={{ width: 96 }}>买家</Box>
+            <Box sx={{ flex: 1 }}>处理结果</Box>
+            <Box sx={{ width: 78 }}>状态</Box>
+            <Box sx={{ width: 44, textAlign: "right" }}>尝试</Box>
+          </Box>
+          {items.map((item, index) => (
+            <QueueRow key={item.id} item={item} last={index === items.length - 1} />
+          ))}
+          {!queue.loading && items.length === 0 && (
+            <Typography sx={{ p: "22px 2px", fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>
+              暂无队列记录
+            </Typography>
+          )}
+          {queue.loading && (
+            <Typography sx={{ p: "22px 2px", fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>
+              正在读取队列…
+            </Typography>
+          )}
+        </Panel>
+
+        <Panel title="依赖健康">
+          <Stack spacing={2}>
+            {dependencyItems.map((item) => (
+              <DependencyRow key={item.id} item={item} />
+            ))}
+            {!dependencies.loading && dependencyItems.length === 0 && <EmptyState primary="暂无依赖健康快照。" />}
+            {dependencies.loading && <EmptyState primary="正在读取依赖健康…" />}
+          </Stack>
+        </Panel>
+      </Box>
     </Box>
   );
 };
 
 function DependencyRow({ item }: { item: DependencySnapshot }) {
-  const color = item.circuitState === "closed" ? "success" : item.circuitState === "half_open" ? "warning" : "error";
+  const tone =
+    item.circuitState === "closed"
+      ? { color: tokens.color.state.success, dot: tokens.color.state.success, label: "正常" }
+      : item.circuitState === "half_open"
+        ? { color: tokens.color.state.warning, dot: "#f59e0b", label: "恢复中" }
+        : { color: tokens.color.state.error, dot: tokens.color.state.error, label: "熔断" };
   return (
-    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="subtitle2">{dependencyLabel(item.id)}</Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{dependencyLabel(item.id)}</Typography>
+        <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>
           失败 {item.consecutiveFailures} 次 · 窗口请求 {item.requestsInWindow}
         </Typography>
       </Box>
-      <Chip size="small" color={color} variant="outlined" label={circuitLabel(item.circuitState)} />
+      <Typography
+        component="span"
+        sx={{ fontSize: 10, fontWeight: 600, color: tone.color, display: "flex", alignItems: "center", gap: "5px" }}
+      >
+        <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: tone.dot }} />
+        {tone.label}
+      </Typography>
     </Box>
   );
 }
 
-function QueueRow({ item }: { item: InboundQueueRecord }) {
+function QueueRow({ item, last }: { item: InboundQueueRecord; last: boolean }) {
+  const pill = queueStatePill(item.state);
+  const errorColor =
+    item.state === "retry_waiting" ? tokens.color.state.warning
+    : item.state === "failed" || item.state === "dead_letter" ? tokens.color.state.error
+    : tokens.color.text.tertiary;
   return (
-    <TableRow hover>
-      <TableCell>{new Date(item.enqueuedAt).toLocaleString()}</TableCell>
-      <TableCell>{item.shopId}</TableCell>
-      <TableCell>{item.buyerId}</TableCell>
-      <TableCell><Chip size="small" variant="outlined" label={queueStateLabel(item.state)} color={queueStateColor(item.state)} /></TableCell>
-      <TableCell>{item.attempts}</TableCell>
-      <TableCell>{new Date(item.availableAt).toLocaleString()}</TableCell>
-      <TableCell sx={{ maxWidth: 260, whiteSpace: "normal", wordBreak: "break-word" }}>{item.lastError ?? "-"}</TableCell>
-      <TableCell>{agentActionLabel(item.state)}</TableCell>
-    </TableRow>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        p: "12px 2px",
+        borderBottom: last ? "none" : "1px solid #f0f0f0",
+      }}
+    >
+      <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2" }}>
+        {new Date(item.enqueuedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+      </Typography>
+      <Typography noWrap sx={{ width: 96, fontSize: 12, fontWeight: 600, pr: 1 }}>
+        {item.buyerId}
+      </Typography>
+      <Typography noWrap sx={{ flex: 1, fontSize: 12, fontWeight: 500, color: errorColor, pr: 1 }}>
+        {queueBusinessMessage(item)}
+      </Typography>
+      <Box sx={{ width: 78 }}>
+        <Pill label={pill.label} tone={pill.tone} />
+      </Box>
+      <Typography
+        sx={{ width: 44, textAlign: "right", fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#525252" }}
+      >
+        {item.attempts}
+      </Typography>
+    </Box>
   );
 }
 
-function queueStateLabel(state: InboundQueueRecord["state"]): string {
+function queueBusinessMessage(item: InboundQueueRecord): string {
+  if (!item.lastError) return "—";
+  if (item.state === "retry_waiting") return "处理中遇到临时问题，稍后自动重试";
+  if (item.state === "failed" || item.state === "dead_letter") return "处理失败，请人工查看或重试";
+  return "处理过程中出现提示";
+}
+
+function queueStatePill(state: InboundQueueRecord["state"]): { label: string; tone: "outline" | "success" | "warning" | "error" | "muted" } {
   switch (state) {
     case "pending":
-      return "待处理";
+      return { label: "待处理", tone: "outline" };
     case "processing":
-      return "处理中";
+      return { label: "处理中", tone: "success" };
     case "retry_waiting":
-      return "等待重试";
+      return { label: "等待重试", tone: "warning" };
     case "completed":
-      return "已完成";
+      return { label: "已完成", tone: "muted" };
     case "failed":
-      return "失败";
+      return { label: "处理失败", tone: "error" };
     case "dead_letter":
-      return "死信";
+      return { label: "处理失败", tone: "error" };
     default:
-      return state;
+      return { label: state, tone: "outline" };
   }
-}
-
-function queueStateColor(state: InboundQueueRecord["state"]): "default" | "primary" | "success" | "warning" | "error" {
-  if (state === "completed") return "success";
-  if (state === "processing") return "primary";
-  if (state === "retry_waiting") return "warning";
-  if (state === "failed" || state === "dead_letter") return "error";
-  return "default";
-}
-
-function agentActionLabel(state: InboundQueueRecord["state"]): string {
-  if (state === "pending") return "等待处理链";
-  if (state === "processing") return "处理链运行中";
-  if (state === "retry_waiting") return "等待重试";
-  if (state === "completed") return "已完成";
-  return "需要人工检查";
-}
-
-function circuitLabel(state: DependencySnapshot["circuitState"]): string {
-  if (state === "closed") return "正常";
-  if (state === "half_open") return "恢复探测";
-  return "熔断";
 }
 
 function dependencyLabel(id: DependencySnapshot["id"]): string {
@@ -277,8 +335,6 @@ function dependencyLabel(id: DependencySnapshot["id"]): string {
       return "PDD";
     case "llm":
       return "LLM";
-    case "embedding_vector":
-      return "Embedding/向量";
     case "product_sync":
       return "商品同步";
     default:
@@ -289,6 +345,6 @@ function dependencyLabel(id: DependencySnapshot["id"]): string {
 function formatDuration(ms: number): string {
   if (ms <= 0) return "0ms";
   if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms / 60_000)}m`;
 }

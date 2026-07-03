@@ -8,7 +8,7 @@ describe("generateAndPersistReply", () => {
     const appendLog = vi.fn();
     const settings: AppSettings = {
       businessHours: { start: "08:00", end: "23:00" },
-      knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+      knowledge: { topK: 4 },
     };
 
     const result = await generateAndPersistReply(
@@ -40,9 +40,6 @@ describe("generateAndPersistReply", () => {
           appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-24T00:00:00.000Z", ...audit }),
         },
         createInferenceClient: async () => nativeAgentClient([{ outputText: "您好，这款可以帮您确认尺码。", toolCalls: [] }]),
-        createKnowledgeService: async () => {
-          throw new Error("embedding endpoint is not configured");
-        },
       },
     );
 
@@ -50,6 +47,52 @@ describe("generateAndPersistReply", () => {
     expect(result.ok && result.reply.text).toBe("您好，这款可以帮您确认尺码。");
     expect(savedDrafts).toHaveLength(0);
     expect(appendLog).not.toHaveBeenCalled();
+  });
+
+  it("stores a meta-note instead of the verbatim reply in conversation memory", async () => {
+    let savedSummary = "";
+    const replyText = "您好，这款可以帮您确认尺码。";
+
+    await generateAndPersistReply(
+      {
+        mode: "automatic",
+        context: {
+          id: "message-1",
+          channel: "pinduoduo",
+          type: "text",
+          content: "这件有 L 码吗？",
+          shopId: "shop-a",
+          accountId: "account-a",
+          buyerId: "buyer-a",
+          receivedAt: "2026-06-24T00:00:00.000Z",
+          raw: {},
+        },
+      },
+      {
+        store: {
+          getSettings: async () => ({
+            businessHours: { start: "08:00", end: "23:00" },
+            knowledge: { topK: 4 },
+          }),
+          saveDraft: async (draft) => draft,
+          appendLog: vi.fn(),
+          listGovernedKnowledge: async () => [],
+          getConversationMemory: async () => undefined,
+          saveConversationMemory: async (memory) => {
+            savedSummary = memory.summary;
+            return { id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory };
+          },
+          appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-24T00:00:00.000Z", ...audit }),
+        },
+        createInferenceClient: async () => nativeAgentClient([{ outputText: replyText, toolCalls: [] }]),
+      },
+    );
+
+    // The verbatim reply must never re-enter memory — that is what makes a small
+    // model parrot its own last reply into a loop.
+    expect(savedSummary).not.toContain(replyText);
+    expect(savedSummary).toContain("买家：这件有 L 码吗？");
+    expect(savedSummary).toContain("客服处理：");
   });
 
   it("returns an error outcome when the LLM is unavailable in auto-send mode", async () => {
@@ -63,7 +106,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => {
             savedDrafts.push(draft);
@@ -77,9 +120,6 @@ describe("generateAndPersistReply", () => {
         },
         createInferenceClient: async () => {
           throw new Error("dependency_llm_circuit_open");
-        },
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
         },
       },
     );
@@ -113,7 +153,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => {
             savedDrafts.push(draft);
@@ -147,9 +187,6 @@ describe("generateAndPersistReply", () => {
           { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "get_shop_products", arguments: {} }] },
           { responseId: "resp-2", outputText: "您好，这款目前有库存。", toolCalls: [] },
         ], prompts),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
       },
     );
 
@@ -189,7 +226,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => draft,
           appendLog: vi.fn(),
@@ -212,9 +249,6 @@ describe("generateAndPersistReply", () => {
           { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "get_shop_products", arguments: {} }] },
           { responseId: "resp-2", outputText: "您好，可以看这款大疆T30后摄像头改装调节支架。", toolCalls: [] },
         ], prompts),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
       },
     );
 
@@ -246,7 +280,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => draft,
           appendLog: vi.fn(),
@@ -268,9 +302,6 @@ describe("generateAndPersistReply", () => {
           { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "get_product_knowledge", arguments: {} }] },
           { responseId: "resp-2", outputText: "您好，这是大疆T30后摄像头改装调节支架。", toolCalls: [] },
         ], prompts),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
       },
     );
 
@@ -303,7 +334,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => {
             savedDrafts.push(draft);
@@ -347,9 +378,6 @@ describe("generateAndPersistReply", () => {
             };
           },
         }),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
       },
     );
 
@@ -395,7 +423,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => draft,
           appendLog: vi.fn(),
@@ -419,9 +447,6 @@ describe("generateAndPersistReply", () => {
           { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "send_goods_link", arguments: { goods_id: "cross-shop-goods" } }] },
           { responseId: "resp-2", outputText: "请稍等，我帮您确认商品链接。", toolCalls: [] },
         ]),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
         sendGoodsLink,
       },
     );
@@ -461,7 +486,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
           }),
           saveDraft: async (draft) => draft,
           appendLog: vi.fn(),
@@ -483,9 +508,6 @@ describe("generateAndPersistReply", () => {
           prompts,
           ["压缩后的记忆"],
         ),
-        createKnowledgeService: async () => {
-          throw new Error("legacy knowledge search must not be used by Agent");
-        },
       },
     );
 
@@ -506,7 +528,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: ["转人工"] },
           }),
           saveDraft: async (draft) => draft,
@@ -518,9 +540,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
       },
     );
 
@@ -541,7 +560,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: ["shop:shop-b:人工", "shop:shop-a:人工"] },
           }),
           saveDraft: async (draft) => draft,
@@ -553,9 +572,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
       },
     );
 
@@ -576,7 +592,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: [], intentRules: [] },
           }),
           saveDraft,
@@ -588,9 +604,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
       },
     );
 
@@ -611,7 +624,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: {
               keywords: ["转人工"],
               intentRules: [{ id: "complaint", label: "投诉", patterns: ["投诉", "没发货"] }],
@@ -626,9 +639,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
       },
     );
 
@@ -654,7 +664,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "21:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: ["转人工"] },
           }),
           saveDraft: async (draft) => draft,
@@ -666,9 +676,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
         sendReply,
         transferConversation,
       },
@@ -693,7 +700,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: ["转人工"] },
           }),
           saveDraft: async (draft) => draft,
@@ -708,9 +715,6 @@ describe("generateAndPersistReply", () => {
           [{ responseId: "resp-1", outputText: "您好，我在的。请问您想咨询哪款商品或订单问题？", toolCalls: [] }],
           prompts,
         ),
-        createKnowledgeService: async () => {
-          throw new Error("embedding endpoint is not configured");
-        },
         sendReply,
       },
     );
@@ -732,7 +736,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: {
               keywords: ["system"],
               intentRules: [{ id: "system", label: "系统", patterns: ["system"] }],
@@ -747,9 +751,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage,
         },
         createInferenceClient,
-        createKnowledgeService: async () => {
-          throw new Error("not reached");
-        },
       },
     );
 
@@ -768,7 +769,7 @@ describe("generateAndPersistReply", () => {
         store: {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
-            knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+            knowledge: { topK: 4 },
             handoff: { keywords: ["转人工"] },
           }),
           saveDraft: async (draft) => {
@@ -783,9 +784,6 @@ describe("generateAndPersistReply", () => {
           upsertMessage: async (message: MessageRecord) => message,
         },
         createInferenceClient: async () => nativeAgentClient([{ responseId: "resp-1", outputText: "您好，我帮您确认。", toolCalls: [] }]),
-        createKnowledgeService: async () => {
-          throw new Error("embedding endpoint is not configured");
-        },
         sendReply,
       },
     );

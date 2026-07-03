@@ -18,7 +18,6 @@ import type {
 } from "@customer-agent/core";
 import { redactSensitiveText } from "@customer-agent/core";
 import type { SqliteAppStore } from "@customer-agent/db";
-import type { LanceKnowledgeService } from "@customer-agent/knowledge";
 
 // Mirrors the reference project's default handoff keyword set. Matching is a
 // lowercase substring test, so the broad/short entries (好评, 取消, 烂) will also
@@ -57,7 +56,6 @@ interface ChatInferenceClient {
 export interface GenerateReplyDeps {
   store: Pick<SqliteAppStore, "getSettings" | "saveDraft" | "appendLog" | "listGovernedKnowledge" | "getConversationMemory" | "saveConversationMemory" | "appendAgentAudit">;
   createInferenceClient: () => Promise<ChatInferenceClient>;
-  createKnowledgeService: () => Promise<Pick<LanceKnowledgeService, "search">>;
   sendGoodsLink?: (context: MessageRecord | GenerateReplyRequest["context"], goodsId: string) => Promise<CustomerAgentToolResult>;
   transferConversation?: (context: MessageRecord | GenerateReplyRequest["context"]) => Promise<CustomerAgentToolResult>;
 }
@@ -252,10 +250,13 @@ async function updateConversationMemory(
   store: Pick<SqliteAppStore, "saveConversationMemory" | "appendLog">,
 ): Promise<void> {
   try {
+    // 只回灌买家原话 + "客服做了什么" 的元描述，绝不把客服回复原文写进记忆。
+    // 把模型自己的整句回复喂回上下文，小模型会照抄上一条，逐条复制成复读环。
+    // ponytail: 元描述会丢失"已承诺X"这类具体措辞；要精确追踪承诺需单独的结构化字段。
     const nextText = [
       existing?.summary,
       `买家：${context.content}`,
-      `客服：${reply.text}`,
+      `客服处理：${noteAgentReply(reply)}`,
     ].filter(Boolean).join("\n");
     const shouldCompress = nextText.length > 1200;
     const summary = shouldCompress
@@ -280,6 +281,17 @@ async function updateConversationMemory(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+// 第三人称、非买家可发送的元描述，无法被模型当成回复模板照抄。
+function noteAgentReply(reply: GeneratedReply): string {
+  if (/转人工|人工客服|转接/.test(reply.text)) {
+    return "已建议/执行转人工";
+  }
+  if (reply.sources.length > 0) {
+    return "已结合店铺商品/客服知识答复买家";
+  }
+  return "已答复买家并引导其补充商品或订单信息";
 }
 
 function memoryKey(context: GenerateReplyRequest["context"]): { shopId: string; accountId: string; buyerId: string } {

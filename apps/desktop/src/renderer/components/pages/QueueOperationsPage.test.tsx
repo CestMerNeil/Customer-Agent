@@ -41,7 +41,7 @@ describe("QueueOperationsPage", () => {
     const invoke = mockBridge();
     render(<QueueOperationsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "重试死信" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重试处理失败" }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("queue.retryDeadLetters", undefined));
     expect(invoke.mock.calls.filter(([channel]) => channel === "queue.metrics").length).toBeGreaterThan(1);

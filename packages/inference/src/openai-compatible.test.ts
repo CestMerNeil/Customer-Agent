@@ -11,7 +11,6 @@ describe("OpenAICompatibleClient", () => {
       {
         baseUrl: "http://localhost:8000/v1",
         chatModel: "qwen",
-        embeddingModel: "nomic",
         temperature: 0.2,
         maxTokens: 512,
       },
@@ -34,7 +33,7 @@ describe("OpenAICompatibleClient", () => {
       json: async () => ({ choices: [{ message: { content: [{ type: "text", text: "有 " }, { type: "text", text: "L 码。" }] } }] }),
     });
     const client = new OpenAICompatibleClient(
-      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen" },
       fetchMock,
     );
     await expect(client.chat("请回答")).resolves.toBe("有 L 码。");
@@ -46,7 +45,7 @@ describe("OpenAICompatibleClient", () => {
       json: async () => ({ choices: [{ message: { content: "", reasoning_content: "OK" } }] }),
     });
     const client = new OpenAICompatibleClient(
-      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen" },
       fetchMock,
     );
     await expect(client.chat("请回答")).resolves.toBe("OK");
@@ -58,7 +57,7 @@ describe("OpenAICompatibleClient", () => {
       json: async () => ({ choices: [{ message: { content: "" }, finish_reason: "length" }] }),
     });
     const client = new OpenAICompatibleClient(
-      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen", embeddingModel: "nomic" },
+      { baseUrl: "http://localhost:8000/v1", chatModel: "qwen" },
       fetchMock,
     );
     await expect(client.chat("请回答")).rejects.toThrow(/finish_reason=length/);
@@ -119,23 +118,6 @@ describe("OpenAICompatibleClient", () => {
         },
       ],
     });
-  });
-
-  it("returns embeddings from OpenAI compatible responses", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
-    });
-    const client = new OpenAICompatibleClient(
-      {
-        baseUrl: "http://localhost:8000/v1",
-        chatModel: "qwen",
-        embeddingModel: "nomic",
-      },
-      fetchMock,
-    );
-
-    await expect(client.embed("退货规则")).resolves.toEqual([0.1, 0.2, 0.3]);
   });
 
   it("uses native chat-completions tools for Agent calls", async () => {

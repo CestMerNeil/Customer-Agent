@@ -2,7 +2,7 @@ import type { CustomerServiceContext } from "./context.js";
 import type { MessageState } from "./message-state.js";
 import type { GeneratedReply, KnowledgeSourceReference, ReplyMode } from "./reply.js";
 
-export type AccountStatus = "offline" | "logging_in" | "online" | "error";
+export type AccountStatus = "offline" | "logging_in" | "online" | "busy" | "error";
 export type KnowledgeScope = "global" | "shop";
 export type GovernedKnowledgeKind = "product" | "customer_service";
 export type GovernedKnowledgeReviewState = "draft" | "reviewed" | "rejected";
@@ -151,15 +151,20 @@ export interface InferenceConfig {
   baseUrl: string;
   apiKey?: string;
   chatModel: string;
-  embeddingModel?: string;
   temperature?: number;
   maxTokens?: number;
 }
 
-export type ModelProviderMode = "local" | "remote";
+// A ModelProvider is the supplier of models behind the unified OpenAI/Responses-compatible
+// interface (chat/vision/embedding). It is one of two kinds:
+//   - "remote": an OpenAI-compatible cloud endpoint (e.g. DashScope/Qwen), configured via InferenceConfig.
+//   - "local":  an app-managed local llama-server, additionally provisioned via InferenceRuntimeConfig.
+export type ModelProvider = "local" | "remote";
 
 export interface InferenceRuntimeConfig {
-  provider: "managed_llama_server";
+  // Process-management kind for the *local* ModelProvider — not the ModelProvider itself.
+  // A remote provider has no managed runtime, so this only ever describes the local case.
+  runtimeKind: "managed_llama_server";
   modelId: string;
   modelPath: string;
   command?: string;
@@ -173,14 +178,12 @@ export interface InferenceRuntimeConfig {
 }
 
 export interface AppSettings {
-  modelProvider?: ModelProviderMode;
+  modelProvider?: ModelProvider;
   businessHours: {
     start: string;
     end: string;
   };
   knowledge: {
-    chunkSize: number;
-    chunkOverlap: number;
     topK: number;
   };
   queue?: {
@@ -200,16 +203,6 @@ export interface AppSettings {
   };
   inference?: InferenceConfig;
   inferenceRuntime?: InferenceRuntimeConfig;
-}
-
-export interface KnowledgeDocumentRecord {
-  id: string;
-  scope: KnowledgeScope;
-  shopId?: string;
-  filePath: string;
-  fileName: string;
-  chunkCount: number;
-  indexedAt: string;
 }
 
 export interface GovernedKnowledgeRecord {

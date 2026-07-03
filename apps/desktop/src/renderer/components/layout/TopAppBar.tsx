@@ -1,9 +1,8 @@
 import React from "react";
 import { Box, IconButton, Stack, Typography } from "@mui/material";
 import { tokens } from "../../theme";
-import { SIDEBAR_WIDTH } from "./NavigationRail";
 
-export const TOOLBAR_HEIGHT = 52;
+export const TOOLBAR_HEIGHT = 56;
 
 interface TopAppBarProps {
   title: string;
@@ -19,39 +18,27 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ title, inferenceStatus }) 
     : inferenceStatus.tone === "error"
       ? tokens.color.state.error
       : tokens.color.text.secondary;
-  const statusBackground = inferenceStatus.tone === "success"
-    ? tokens.color.state.successSoft
-    : inferenceStatus.tone === "error"
-      ? tokens.color.state.errorSoft
-      : tokens.color.control.fill;
-
   return (
     <Box
       component="header"
       sx={{
-        position: "fixed",
-        top: 0,
-        left: SIDEBAR_WIDTH,
-        width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
+        position: "relative",
+        flex: "0 0 auto",
         height: TOOLBAR_HEIGHT,
-        zIndex: (theme) => theme.zIndex.appBar,
         display: "flex",
         alignItems: "center",
-        gap: 1.5,
-        px: 2.5,
-        bgcolor: tokens.color.surface.sidebar,
-        backdropFilter: "saturate(180%) blur(24px)",
-        WebkitBackdropFilter: "saturate(180%) blur(24px)",
+        gap: 2,
+        px: 3.5,
+        bgcolor: tokens.color.surface.base,
         borderBottom: `1px solid ${tokens.color.border.hairline}`,
-        WebkitAppRegion: "drag",
       }}
     >
-      <Typography variant="h6" component="h1" sx={{ flexGrow: 1, fontWeight: 600 }}>
+      <Typography component="div" sx={{ flexGrow: 1, fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em" }}>
         {title}
       </Typography>
       <Stack
         direction="row"
-        spacing={1}
+        spacing={2}
         sx={{
           alignItems: "center",
           WebkitAppRegion: "no-drag",
@@ -61,24 +48,22 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ title, inferenceStatus }) 
           sx={{
             display: { xs: "none", md: "flex" },
             alignItems: "center",
-            gap: 0.75,
-            px: 1.25,
-            py: 0.5,
-            borderRadius: `${tokens.radius.pill}px`,
-            bgcolor: statusBackground,
-            color: statusColor,
-            fontSize: 12,
+            gap: 1,
+            bgcolor: "transparent",
+            color: "#525252",
+            fontSize: 11,
             fontWeight: 600,
           }}
         >
-          <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: statusColor }} />
+          <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: statusColor }} />
           {inferenceStatus.label}
         </Box>
-        <IconButton size="small" color="inherit" aria-label="通知">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>notifications</span>
+        <Box sx={{ width: "1px", height: 16, bgcolor: "#e6e6e6" }} />
+        <IconButton size="small" color="inherit" aria-label="搜索">
+          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: "#8a8a8a" }}>search</span>
         </IconButton>
-        <IconButton size="small" color="inherit" aria-label="账户">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>account_circle</span>
+        <IconButton size="small" color="inherit" aria-label="通知">
+          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: "#8a8a8a" }}>notifications</span>
         </IconButton>
       </Stack>
     </Box>

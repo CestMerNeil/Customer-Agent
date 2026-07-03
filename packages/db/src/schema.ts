@@ -34,14 +34,6 @@ export const replyDrafts = sqliteTable("reply_drafts", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const knowledgeDocuments = sqliteTable("knowledge_documents", {
-  id: text("id").primaryKey(),
-  payload: text("payload").notNull(),
-  scope: text("scope").notNull(),
-  shopId: text("shop_id"),
-  indexedAt: text("indexed_at").notNull(),
-});
-
 export const settings = sqliteTable("settings", {
   id: integer("id").primaryKey(),
   payload: text("payload").notNull(),

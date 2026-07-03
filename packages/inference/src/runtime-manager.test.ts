@@ -39,6 +39,31 @@ describe("RuntimeProcessManager", () => {
     ).resolves.toMatchObject({ running: true, pid: 456 });
     expect(spawn).toHaveBeenCalledWith("llama-server", ["-m", "/models/qwen.gguf", "--host", "0.0.0.0", "--port", "8080"], expect.any(Object));
   });
+
+  it("drains stdio and reports a dead process with its stderr", async () => {
+    const handlers: Record<string, (arg: unknown) => void> = {};
+    const stdout = { on: vi.fn() };
+    const stderr = { on: vi.fn((event: string, cb: (arg: unknown) => void) => { handlers[`stderr:${event}`] = cb; }) };
+    const child = {
+      pid: 789,
+      kill: vi.fn(),
+      stdout,
+      stderr,
+      on: vi.fn((event: string, cb: (arg: unknown) => void) => { handlers[event] = cb; }),
+    };
+    const manager = new RuntimeProcessManager({ spawn: vi.fn().mockReturnValue(child) });
+
+    await manager.start({ command: "llama-server", modelPath: "/m.gguf", port: 8000, args: ["-m", "/m.gguf"] });
+    // Both pipes must be drained or llama-server stalls mid-load.
+    expect(stdout.on).toHaveBeenCalledWith("data", expect.any(Function));
+    expect(stderr.on).toHaveBeenCalledWith("data", expect.any(Function));
+    expect(manager.status()).toEqual({ running: true, pid: 789 });
+
+    handlers["stderr:data"]?.(Buffer.from("error: failed to load model"));
+    handlers.exit?.(1);
+    expect(manager.status()).toEqual({ running: false });
+    expect(manager.lastError()).toContain("failed to load model");
+  });
 });
 
 describe("ModelScopeManager", () => {
@@ -171,6 +196,24 @@ describe("ModelScopeManager", () => {
     const manager = new ModelScopeManager({ cacheDir: dir });
 
     await expect(manager.ensureModel("qwen/Qwen2.5-7B-Instruct")).rejects.toThrow("当前仅支持本地文件路径或 HTTPS 模型文件地址");
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("deletes cached remote model files without deleting local model paths", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "customer-agent-modelscope-delete-"));
+    const manager = new ModelScopeManager({ cacheDir: dir });
+    vi.spyOn(globalThis, "fetch" as never).mockResolvedValue(new Response(new Uint8Array([1, 2, 3])));
+
+    const modelPath = await manager.ensureModel("https://example.com/models/qwen-vl.gguf");
+    await expect(readFile(modelPath)).resolves.toEqual(Buffer.from([1, 2, 3]));
+
+    await expect(manager.deleteModel("https://example.com/models/qwen-vl.gguf")).resolves.toBe(true);
+    await expect(readFile(modelPath)).rejects.toThrow();
+
+    const localModel = path.join(dir, "custom.gguf");
+    await writeFile(localModel, "keep");
+    await expect(manager.deleteModel(localModel)).resolves.toBe(false);
+    await expect(readFile(localModel)).resolves.toEqual(Buffer.from("keep"));
     await rm(dir, { recursive: true, force: true });
   });
 });

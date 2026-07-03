@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Stack, Typography } from "@mui/material";
 import { tokens } from "../theme";
 
-/** Small uppercase group label sitting above a grouped card (macOS Settings). */
+/** Small uppercase eyebrow label sitting above a grouped card (Mistral editorial). */
 export const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Typography
     variant="overline"

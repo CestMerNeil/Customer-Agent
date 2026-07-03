@@ -25,13 +25,13 @@
 ## 4. PDD Real Operations
 
 - [x] 4.1 Implement real PDD account login and encrypted session persistence for multi-account use.
-- [x] 4.2 Implement real account start/stop, chat token retrieval, online/offline status, and sanitized diagnostics.
+- [x] 4.2 Implement real account start/stop, chat token retrieval, online/busy/offline customer-service status, and sanitized diagnostics.
 - [x] 4.3 Implement real WebSocket receive and normalization for text, image, video, emotion, goods card, goods inquiry, goods spec, order info, withdraw, auth, transfer, mall/system messages, and unsupported types.
 - [x] 4.4 Implement real text send and image send where supported with retry, result persistence, and sanitized failure states.
 - [x] 4.5 Implement real goods-card send using real goods IDs and guard against using list indexes as goods IDs.
 - [x] 4.6 Implement real assigned customer-service list retrieval and conversation transfer.
 - [x] 4.7 Implement real product list and product detail API services with parsed field maps and source metadata.
-- [ ] 4.8 Complete real PDD acceptance for login, session extraction, start, receive, text send, goods-card send, transfer, product list/detail, and stop.
+- [ ] 4.8 Complete real PDD acceptance for login, session extraction, start, online/busy/offline status changes, receive, text send, goods-card send, transfer, product list/detail, and stop.
 
 ## 5. Connection Governance
 
@@ -78,7 +78,7 @@
 
 ## 8A. Local Model Runtime Provisioning
 
-- [x] 8A.1 Define approved local model profiles for chat, embeddings, and multimodal extraction, starting with a small Gemma-family local multimodal candidate and recording exact model IDs, file sizes, checksums, licenses, and platform support.
+- [x] 8A.1 Define approved local model profiles for chat and multimodal extraction, using Qwen2.5-VL 3B as the default local multimodal profile and Qwen2.5-VL 7B as the higher-quality option, recording exact model IDs, file sizes, checksums, licenses, and platform support.
 - [x] 8A.2 Replace manual runtime-command setup with managed runtime provisioning from bundled resources or checksummed platform manifests.
 - [x] 8A.3 Replace manual model URL/path setup for the default profile with first-launch or first-use app-managed download, resume, checksum verification, cache reuse, and disk-space checks.
 - [x] 8A.4 Add runtime lifecycle governance for local process start/stop, health checks, port conflicts, model-load errors, and sanitized diagnostics.

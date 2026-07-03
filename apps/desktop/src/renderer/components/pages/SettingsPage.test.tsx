@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("SettingsPage", () => {
-  it("saves business hours and handoff rules without a reply-mode field", async () => {
+  it("saves business hours without a handoff or reply-mode field", async () => {
     const invoke = mockBridge();
     render(<SettingsPage />);
 
@@ -39,7 +39,6 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("settings.save", {
         businessHours: { start: "08:00", end: "23:00" },
-        handoff: { keywords: [], intentRules: [] },
       });
     });
   });

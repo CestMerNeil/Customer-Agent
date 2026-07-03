@@ -1,9 +1,10 @@
 import { createTheme, type Theme } from "@mui/material/styles";
 
 /**
- * Design tokens for a macOS-native look (System Settings / Finder / Mail):
- * translucent grouped sidebar, inset grouped lists, segmented controls,
- * SF typography, hairline separators, system accent blue.
+ * Design tokens for the flat editorial look (see Customer Agent App.dc.html):
+ * white/near-black chrome, ink primary CTAs, a single green accent reserved
+ * for status/active-state signalling, hairline borders, flat surfaces, and
+ * pill badges. No warm cream tint and no gradient accent band.
  *
  * Light and dark are driven by CSS variables that follow `prefers-color-scheme`,
  * so `tokens` are stable string references and custom chrome adapts with no JS.
@@ -13,58 +14,58 @@ type Mode = "light" | "dark";
 
 const palettes = {
   light: {
-    surfaceApp: "#f5f5f7",
-    surfaceSidebar: "rgba(246, 246, 248, 0.72)",
+    surfaceApp: "#fafafa",
+    surfaceSidebar: "rgba(255, 255, 255, 0.9)",
     surfaceBase: "#ffffff",
-    surfaceSunken: "#f0f0f3",
-    surfaceHover: "rgba(0, 0, 0, 0.04)",
-    surfaceSelected: "rgba(0, 0, 0, 0.06)",
-    surfaceInverse: "#1d1d1f",
-    surfaceOnInverse: "#f5f5f7",
-    accent: "#007aff",
-    accentHover: "#0a6cf0",
-    accentSoft: "rgba(0, 122, 255, 0.12)",
-    accentSoftHover: "rgba(0, 122, 255, 0.18)",
+    surfaceSunken: "#f7f7f7",
+    surfaceHover: "rgba(10, 10, 10, 0.04)",
+    surfaceSelected: "rgba(5, 150, 105, 0.10)",
+    surfaceInverse: "#0a0a0a",
+    surfaceOnInverse: "#ffffff",
+    accent: "#0a0a0a",
+    accentHover: "#262626",
+    accentSoft: "rgba(10, 10, 10, 0.06)",
+    accentSoftHover: "rgba(10, 10, 10, 0.10)",
     onAccent: "#ffffff",
-    textPrimary: "#1d1d1f",
-    textSecondary: "rgba(60, 60, 67, 0.6)",
-    textTertiary: "rgba(60, 60, 67, 0.3)",
-    hairline: "rgba(0, 0, 0, 0.1)",
-    strong: "rgba(0, 0, 0, 0.18)",
-    controlFill: "rgba(120, 120, 128, 0.12)",
-    success: "#34c759",
-    successSoft: "rgba(52, 199, 89, 0.16)",
-    warning: "#ff9500",
-    warningSoft: "rgba(255, 149, 0, 0.16)",
-    error: "#ff3b30",
-    errorSoft: "rgba(255, 59, 48, 0.16)",
+    textPrimary: "#0a0a0a",
+    textSecondary: "#737373",
+    textTertiary: "#a3a3a3",
+    hairline: "#ededed",
+    strong: "#c7c7c7",
+    controlFill: "rgba(10, 10, 10, 0.06)",
+    success: "#059669",
+    successSoft: "rgba(5, 150, 105, 0.10)",
+    warning: "#b45309",
+    warningSoft: "rgba(245, 158, 11, 0.10)",
+    error: "#dc2626",
+    errorSoft: "rgba(220, 38, 38, 0.10)",
   },
   dark: {
-    surfaceApp: "#1c1c1e",
-    surfaceSidebar: "rgba(40, 40, 42, 0.72)",
-    surfaceBase: "#2c2c2e",
-    surfaceSunken: "#3a3a3c",
-    surfaceHover: "rgba(255, 255, 255, 0.06)",
-    surfaceSelected: "rgba(255, 255, 255, 0.1)",
-    surfaceInverse: "#f5f5f7",
-    surfaceOnInverse: "#1d1d1f",
-    accent: "#0a84ff",
-    accentHover: "#3a9bff",
-    accentSoft: "rgba(10, 132, 255, 0.22)",
-    accentSoftHover: "rgba(10, 132, 255, 0.3)",
-    onAccent: "#ffffff",
-    textPrimary: "#f5f5f7",
-    textSecondary: "rgba(235, 235, 245, 0.6)",
-    textTertiary: "rgba(235, 235, 245, 0.3)",
-    hairline: "rgba(255, 255, 255, 0.12)",
-    strong: "rgba(255, 255, 255, 0.2)",
-    controlFill: "rgba(120, 120, 128, 0.28)",
-    success: "#30d158",
-    successSoft: "rgba(48, 209, 88, 0.2)",
-    warning: "#ff9f0a",
-    warningSoft: "rgba(255, 159, 10, 0.2)",
-    error: "#ff453a",
-    errorSoft: "rgba(255, 69, 58, 0.2)",
+    surfaceApp: "#1a1a1c",
+    surfaceSidebar: "rgba(28, 28, 30, 0.9)",
+    surfaceBase: "#242426",
+    surfaceSunken: "#2c2c2e",
+    surfaceHover: "rgba(255, 255, 255, 0.05)",
+    surfaceSelected: "rgba(52, 211, 153, 0.20)",
+    surfaceInverse: "#f5f3ee",
+    surfaceOnInverse: "#1f1f1f",
+    accent: "#f5f3ee",
+    accentHover: "#d8d5cf",
+    accentSoft: "rgba(245, 243, 238, 0.10)",
+    accentSoftHover: "rgba(245, 243, 238, 0.16)",
+    onAccent: "#0a0a0a",
+    textPrimary: "#f5f3ee",
+    textSecondary: "rgba(245, 243, 238, 0.62)",
+    textTertiary: "rgba(245, 243, 238, 0.36)",
+    hairline: "rgba(255, 255, 255, 0.10)",
+    strong: "rgba(255, 255, 255, 0.18)",
+    controlFill: "rgba(255, 255, 255, 0.10)",
+    success: "#34d399",
+    successSoft: "rgba(52, 211, 153, 0.20)",
+    warning: "#ffa110",
+    warningSoft: "rgba(255, 161, 16, 0.20)",
+    error: "#f2554b",
+    errorSoft: "rgba(242, 85, 75, 0.20)",
   },
 } satisfies Record<Mode, Record<string, string>>;
 
@@ -106,8 +107,13 @@ export const themeCssVariables = {
   },
 };
 
-const SF_FONT =
-  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif';
+// Manrope (self-hosted, see fonts/fonts.css) for UI/body, matching the design
+// spec exactly. CJK fallbacks keep the Chinese UI clean.
+const UI_FONT =
+  '"Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+// Space Grotesk (self-hosted) for tabular numeral displays per the design spec.
+const DISPLAY_FONT = '"Space Grotesk", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const MONO_FONT = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
 export const tokens = {
   color: {
@@ -147,15 +153,15 @@ export const tokens = {
       warningSoft: v("warningSoft"),
       error: v("error"),
       errorSoft: v("errorSoft"),
-      info: v("accent"),
+      info: v("success"),
     },
   },
-  radius: { sm: 6, md: 8, lg: 10, xl: 14, pill: 999 },
-  // macOS leans on borders and material, not heavy shadows.
+  radius: { xs: 4, sm: 6, md: 8, lg: 14, xl: 16, xxl: 20, pill: 999 },
+  // Flat editorial system: hairline borders carry definition, shadows stay faint.
   elevation: {
-    1: "0 0.5px 1px rgba(0, 0, 0, 0.04)",
-    2: "0 4px 16px rgba(0, 0, 0, 0.12)",
-    3: "0 12px 32px rgba(0, 0, 0, 0.18)",
+    1: "0 1px 2px rgba(0, 0, 0, 0.04)",
+    2: "0 4px 12px rgba(0, 0, 0, 0.04)",
+    3: "0 12px 24px rgba(0, 0, 0, 0.08)",
   },
   motion: {
     duration: { fast: "120ms", base: "200ms", slow: "300ms" },
@@ -165,7 +171,7 @@ export const tokens = {
       exit: "cubic-bezier(0.4, 0, 1, 1)",
     },
   },
-  font: { family: SF_FONT },
+  font: { family: UI_FONT, display: DISPLAY_FONT, mono: MONO_FONT },
 } as const;
 
 /** Build the MUI theme for a concrete mode (MUI needs real hex for alpha math). */
@@ -179,28 +185,29 @@ export function makeTheme(mode: Mode): Theme {
       error: { main: p.error },
       warning: { main: p.warning },
       success: { main: p.success },
-      info: { main: p.accent },
+      info: { main: p.success },
       background: { default: p.surfaceApp, paper: p.surfaceBase },
       text: { primary: p.textPrimary, secondary: p.textSecondary },
       divider: p.hairline,
       action: { hover: p.surfaceHover, selected: p.surfaceSelected },
     },
     typography: {
-      fontFamily: SF_FONT,
+      fontFamily: UI_FONT,
       fontSize: 13,
-      h1: { fontSize: "1.75rem", fontWeight: 600, letterSpacing: "-0.02em" },
-      h2: { fontSize: "1.5rem", fontWeight: 600, letterSpacing: "-0.02em" },
-      h3: { fontSize: "1.3rem", fontWeight: 600, letterSpacing: "-0.015em" },
-      h4: { fontSize: "1.5rem", fontWeight: 600, letterSpacing: "-0.018em" },
-      h5: { fontSize: "1.1rem", fontWeight: 600, letterSpacing: "-0.01em" },
+      // h1/h2 carry the flat editorial voice: heavy weight Inter, no serif face.
+      h1: { fontFamily: UI_FONT, fontSize: "2rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 },
+      h2: { fontFamily: UI_FONT, fontSize: "1.6rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 },
+      h3: { fontSize: "1.3rem", fontWeight: 500, letterSpacing: "-0.01em" },
+      h4: { fontSize: "1.4rem", fontWeight: 800, letterSpacing: "-0.015em" },
+      h5: { fontSize: "1.05rem", fontWeight: 500, letterSpacing: 0 },
       h6: { fontSize: "0.95rem", fontWeight: 600, letterSpacing: 0 },
       subtitle2: { fontWeight: 600, fontSize: "0.85rem" },
-      body1: { fontSize: "0.9rem" },
-      body2: { fontSize: "0.82rem" },
+      body1: { fontSize: "0.9rem", lineHeight: 1.55 },
+      body2: { fontSize: "0.82rem", lineHeight: 1.5 },
       button: { fontWeight: 500, letterSpacing: 0, fontSize: "0.85rem" },
       caption: { fontSize: "0.75rem" },
       overline: {
-        letterSpacing: "0.04em",
+        letterSpacing: "0.08em",
         fontWeight: 600,
         textTransform: "uppercase",
         fontSize: "0.68rem",
@@ -222,15 +229,22 @@ export function makeTheme(mode: Mode): Theme {
         defaultProps: { disableElevation: true, disableRipple: true },
         styleOverrides: {
           root: {
-            borderRadius: tokens.radius.sm,
+            borderRadius: tokens.radius.md,
             textTransform: "none",
             boxShadow: "none",
-            paddingInline: 14,
-            minHeight: 30,
+            paddingInline: 18,
+            minHeight: 34,
             transition: `background-color ${tokens.motion.duration.fast} ${tokens.motion.easing.standard}`,
             "&:hover": { boxShadow: "none" },
           },
+          outlined: { borderColor: p.strong },
         },
+        variants: [
+          {
+            props: { variant: "contained", color: "primary" },
+            style: { "&:active": { backgroundColor: p.accentHover } },
+          },
+        ],
       },
       MuiCard: {
         defaultProps: { variant: "outlined" },
@@ -246,11 +260,21 @@ export function makeTheme(mode: Mode): Theme {
       },
       MuiPaper: { styleOverrides: { root: { backgroundImage: "none" } } },
       MuiTextField: { defaultProps: { variant: "outlined", size: "small" } },
-      MuiOutlinedInput: { styleOverrides: { root: { borderRadius: tokens.radius.sm } } },
+      MuiOutlinedInput: { styleOverrides: { root: { borderRadius: tokens.radius.md } } },
       MuiChip: {
+        // DESIGN.md badges are pills (rounded.full); buttons are not.
         styleOverrides: {
-          root: { borderRadius: tokens.radius.sm, fontWeight: 500, height: 22 },
+          root: { borderRadius: tokens.radius.pill, fontWeight: 600, height: 22 },
           sizeSmall: { height: 20 },
+        },
+      },
+      MuiToggleButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: tokens.radius.md,
+            textTransform: "none",
+            fontWeight: 500,
+          },
         },
       },
       MuiSwitch: {

@@ -10,6 +10,7 @@ import type {
   ReplyDraftRecord
 } from "@customer-agent/core";
 import { PddApi } from "./api.js";
+import type { PddCustomerServiceAvailability } from "./api.js";
 import { PddHttpClient } from "./client.js";
 import { pddWsBaseUrl } from "./endpoints.js";
 import { cookieListToJar, parseCookieJar, type BrowserCookie } from "./cookies.js";
@@ -258,6 +259,22 @@ export class PddService {
     return { ok: true };
   }
 
+  async setAccountAvailability(
+    accountId: string,
+    status: Extract<AccountRecord["status"], "online" | "busy" | "offline">,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const account = await this.options.getAccount?.(accountId);
+    if (!account?.cookies) {
+      return { ok: false, error: "账号缺少可用会话，请先完成真实拼多多登录。" };
+    }
+
+    const api = this.createApi(account.cookies);
+    await api.setOnlineStatus(status satisfies PddCustomerServiceAvailability);
+    await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status, error: "" }));
+    await this.log("info", `拼多多账号接待状态已更新：${account.username} ${status}`);
+    return { ok: true };
+  }
+
   async logoutAccount(accountId: string): Promise<{ ok: boolean; error?: string }> {
     const account = await this.options.getAccount?.(accountId);
     if (!account) {
@@ -361,7 +378,7 @@ export class PddService {
     }
 
     const token = await this.executeWithFailureCategory(account, isReconnect, "start-token", () => api.getChatToken());
-    await this.executeWithFailureCategory(account, isReconnect, "start-online", () => api.setOnlineStatus("1"));
+    await this.executeWithFailureCategory(account, isReconnect, "start-online", () => api.setOnlineStatus("online"));
 
     const SocketCtor = resolveWebSocketCtor();
     if (!SocketCtor) {

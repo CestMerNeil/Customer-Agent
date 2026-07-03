@@ -24,21 +24,49 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
   inferenceStatus,
 }) => {
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <NavigationRail items={navItems} activeId={activeNavId} onSelect={onNavSelect} />
-      <TopAppBar title={title} inferenceStatus={inferenceStatus} />
+    <Box
+      sx={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: "background.paper",
+        color: "text.primary",
+        overflow: "hidden",
+      }}
+    >
+      {/* Draggable strip for the macOS hiddenInset traffic lights. */}
       <Box
-        component="main"
         sx={{
-          flexGrow: 1,
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          ml: `${SIDEBAR_WIDTH}px`,
-          mt: `${TOOLBAR_HEIGHT}px`,
-          minWidth: 0,
+          height: 40,
+          flex: "0 0 auto",
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          WebkitAppRegion: "drag",
         }}
-      >
-        <Box sx={{ minHeight: `calc(100vh - ${TOOLBAR_HEIGHT}px)` }}>{children}</Box>
+      />
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <NavigationRail items={navItems} activeId={activeNavId} onSelect={onNavSelect} />
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <TopAppBar title={title} inferenceStatus={inferenceStatus} />
+          <Box
+            component="main"
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              px: { xs: 2.5, md: 3.5 },
+              py: 3.25,
+              "&::-webkit-scrollbar": { width: 10 },
+              "&::-webkit-scrollbar-thumb": {
+                bgcolor: "#e2e2e2",
+                borderRadius: 6,
+                border: "3px solid #fff",
+              },
+            }}
+          >
+            {children}
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

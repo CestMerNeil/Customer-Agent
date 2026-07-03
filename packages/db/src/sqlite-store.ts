@@ -11,7 +11,6 @@ import type {
   GovernedKnowledgeReviewState,
   InboundQueueMetrics,
   InboundQueueRecord,
-  KnowledgeDocumentRecord,
   LogLevel,
   LogRecord,
   MessageRecord,
@@ -57,7 +56,7 @@ const DEFAULT_QUEUE_BASE_BACKOFF_MS = 5_000;
 const defaultSettings: AppSettings = {
   modelProvider: "local",
   businessHours: { start: "08:00", end: "23:00" },
-  knowledge: { chunkSize: 900, chunkOverlap: 120, topK: 4 },
+  knowledge: { topK: 4 },
   queue: {
     maxConcurrentConversations: DEFAULT_QUEUE_MAX_CONCURRENT_CONVERSATIONS,
     maxAttempts: DEFAULT_QUEUE_MAX_ATTEMPTS,
@@ -520,34 +519,6 @@ export class SqliteAppStore {
     )[0];
   }
 
-  async saveKnowledgeDocument(document: KnowledgeDocumentRecord): Promise<KnowledgeDocumentRecord> {
-    this.db.run(
-      `INSERT INTO knowledge_documents(id, payload, scope, shop_id, indexed_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, indexed_at=excluded.indexed_at`,
-      [document.id, JSON.stringify(document), document.scope, document.shopId ?? null, document.indexedAt],
-    );
-    await this.persist();
-    return document;
-  }
-
-  async listKnowledgeDocuments(options: { scope?: string; shopId?: string } = {}): Promise<KnowledgeDocumentRecord[]> {
-    const clauses: string[] = [];
-    const params: string[] = [];
-    if (options.scope) {
-      clauses.push("scope = ?");
-      params.push(options.scope);
-    }
-    if (options.shopId) {
-      clauses.push("shop_id = ?");
-      params.push(options.shopId);
-    }
-    return this.query<KnowledgeDocumentRecord>(
-      `SELECT payload FROM knowledge_documents ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY indexed_at DESC`,
-      params,
-      (row) => JSON.parse(String(row.payload)) as KnowledgeDocumentRecord,
-    );
-  }
 
   async saveGovernedKnowledge(input: NewGovernedKnowledge): Promise<GovernedKnowledgeRecord> {
     const now = new Date().toISOString();
@@ -832,10 +803,6 @@ export class SqliteAppStore {
       );
       CREATE INDEX IF NOT EXISTS idx_agent_audit_scope
         ON agent_audit(shop_id, message_id, created_at);
-      CREATE TABLE IF NOT EXISTS knowledge_documents (
-        id TEXT PRIMARY KEY, payload TEXT NOT NULL, scope TEXT NOT NULL,
-        shop_id TEXT, indexed_at TEXT NOT NULL
-      );
       CREATE TABLE IF NOT EXISTS governed_knowledge (
         id TEXT PRIMARY KEY, payload TEXT NOT NULL, citation_id TEXT NOT NULL,
         kind TEXT NOT NULL, shop_id TEXT NOT NULL, version INTEGER NOT NULL,

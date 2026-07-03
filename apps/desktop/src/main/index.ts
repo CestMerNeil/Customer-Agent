@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
@@ -22,7 +22,6 @@ import {
   createReleaseCapabilityMatrix,
   DependencyGovernor,
   getLocalModelProfileForRuntime,
-  isLegacyDefaultLocalModelId,
   localModelProfiles,
   normalizeLocalRuntimeConfig,
   runtimeConfigSupportsLocalCapability,
@@ -32,10 +31,10 @@ import type { AcceptanceRecord } from "@customer-agent/core";
 import { SqliteAppStore } from "@customer-agent/db";
 import { ModelScopeManager, RuntimeProcessManager, OpenAICompatibleClient } from "@customer-agent/inference";
 import type { ModelDownloadProgress, ResponseModelRequest, ResponseModelResult } from "@customer-agent/inference";
-import { LanceKnowledgeService } from "@customer-agent/knowledge";
 import { PddApi, PddBrowserHttpClient, PddHttpClient, PddProductSyncService, PddService, parseCookieJar } from "@customer-agent/pdd";
 import type { ProductKnowledgeExtractionInput, ProductKnowledgeExtractionResult } from "@customer-agent/pdd";
 import { appendDiagnostic, generateAndPersistReply, runInboundHandlerChain, sanitizeUserFacingError } from "./reply.js";
+import { extractKnowledgeEntries } from "./knowledge-extract.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -53,7 +52,7 @@ const productSyncControllers = new Map<string, AbortController>();
 let mainWindow: BrowserWindow | undefined;
 
 const DEFAULT_RUNTIME: InferenceRuntimeConfig = {
-  provider: "managed_llama_server",
+  runtimeKind: "managed_llama_server",
   modelId: "",
   modelPath: "",
   command: "llama-server",
@@ -496,7 +495,6 @@ async function processInboundQueue(): Promise<void> {
               {
                 store,
                 createInferenceClient,
-                createKnowledgeService,
                 sendGoodsLink: sendGoodsLinkTool,
                 transferConversation: transferConversationTool,
                 sendReply: async (context, text) => {
@@ -712,9 +710,42 @@ function resolveModelProvider(settings: AppSettings): "local" | "remote" {
   return settings.inference && !isLocalInferenceBaseUrl(settings.inference.baseUrl) ? "remote" : "local";
 }
 
+// ponytail: 仅开发期的 env 覆盖。打包(app.isPackaged)时一律忽略，key 不会泄进
+// 生产/CI；调试期把 DashScope/千问的 baseUrl+key+model 写进 env 即可直接生效，
+// 不必每次在 UI 里填、也不写进加密 settings。
+function envInferenceConfigOverride(): { baseUrl: string; apiKey: string; chatModel: string } | undefined {
+  if (app.isPackaged) {
+    return undefined;
+  }
+  const baseUrl = process.env.CUSTOMER_AGENT_LLM_BASE_URL?.trim();
+  const apiKey = process.env.CUSTOMER_AGENT_LLM_API_KEY?.trim();
+  const chatModel = process.env.CUSTOMER_AGENT_LLM_MODEL?.trim();
+  if (!baseUrl || !apiKey || !chatModel) {
+    return undefined;
+  }
+  return { baseUrl, apiKey, chatModel };
+}
+
+async function readDocumentText(filePath: string): Promise<string> {
+  const ext = path.extname(filePath).toLowerCase();
+  if ([".pdf", ".docx", ".doc"].includes(ext)) {
+    throw new Error(`${ext} 解析需要额外依赖（mammoth/pdf-parse），当前仅支持 txt/md/json。`);
+  }
+  const raw = await readFile(filePath, "utf8");
+  return ext === ".json" ? JSON.stringify(JSON.parse(raw), null, 2) : raw;
+}
+
 async function createInferenceClient(): Promise<ChatInferenceClient> {
   const store = await getStore();
   const settings = await store.getSettings();
+  const envOverride = envInferenceConfigOverride();
+  if (envOverride) {
+    return governChatClient(new OpenAICompatibleClient({
+      ...envOverride,
+      temperature: settings.inference?.temperature ?? 0.3,
+      maxTokens: settings.inference?.maxTokens ?? 1000,
+    }));
+  }
   if (resolveModelProvider(settings) === "local") {
     const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
     return governChatClient(new OpenAICompatibleClient({
@@ -736,7 +767,6 @@ async function createInferenceClient(): Promise<ChatInferenceClient> {
     await appendDiagnostic(store, "inference", "missing_endpoint_config", {
       baseUrl: settings.inference.baseUrl,
       chatModel: settings.inference.chatModel,
-      embeddingModel: settings.inference.embeddingModel ?? "",
       error: error.message,
     });
     throw error;
@@ -855,13 +885,13 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
   let mmprojPath = runtimeConfig.mmprojPath;
   const profile = getLocalModelProfileForRuntime(runtimeConfig);
   const mmproj = profile?.auxiliaryModels?.find((item) => item.purpose === "mmproj");
-  if (!modelPath || profile?.model.sha256) {
+  if (!modelPath || !existsSync(modelPath)) {
     modelPath = await getModelScopeManager("local").ensureModel(runtimeConfig.modelId, {
       ...(profile?.model.sha256 ? { expectedSha256: profile.model.sha256 } : {}),
       onProgress: (progress) => sendModelScopeDownloadProgress(requestId, runtimeConfig.modelId, progress),
     });
   }
-  if (mmproj && (!mmprojPath || mmproj.sha256)) {
+  if (mmproj && (!mmprojPath || !existsSync(mmprojPath))) {
     mmprojPath = await getModelScopeManager("local").ensureModel(mmproj.url, {
       ...(mmproj.sha256 ? { expectedSha256: mmproj.sha256 } : {}),
       onProgress: (progress) => sendModelScopeDownloadProgress(requestId, mmproj.url, progress),
@@ -913,6 +943,11 @@ async function waitForRuntimeHealth(client: OpenAICompatibleClient, timeoutMs = 
       return;
     } catch (error) {
       lastError = error;
+      const manager = getRuntimeProcessManager();
+      if (!manager.status().running) {
+        const stderr = manager.lastError();
+        throw new Error(`本地运行时进程已退出，启动失败。${stderr ? `运行时输出：${stderr}` : ""}`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 2_000));
     }
   }
@@ -1034,45 +1069,6 @@ function faqArray(value: unknown): Array<{ question: string; answer: string }> {
   });
 }
 
-async function createKnowledgeService(): Promise<LanceKnowledgeService> {
-  const store = await getStore();
-  const settings = await store.getSettings();
-  const inference = resolveEmbeddingInferenceConfig(settings);
-  if (!inference.embeddingModel?.trim()) {
-    throw new Error("知识库检索需要先配置 embedding 模型。");
-  }
-  if (!inference.baseUrl.trim()) {
-    throw new Error("知识库检索需要先配置 embedding endpoint。");
-  }
-  const client = new OpenAICompatibleClient(inference);
-  return new LanceKnowledgeService({
-    dataDir: path.join(app.getPath("userData"), "knowledge"),
-    chunkSize: settings.knowledge.chunkSize,
-    chunkOverlap: settings.knowledge.chunkOverlap,
-    embed: (text) => runGoverned("embedding_vector", () => client.embed(text)),
-  });
-}
-
-function resolveEmbeddingInferenceConfig(settings: AppSettings): InferenceConfig {
-  if (resolveModelProvider(settings) !== "local") {
-    if (!settings.inference) {
-      throw new Error("知识库检索需要先配置 embedding endpoint。");
-    }
-    return settings.inference;
-  }
-  const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-  if (!runtimeConfigSupportsLocalCapability(runtime, "embedding")) {
-    throw new Error("当前本地模型档案不支持 embedding。请选择带 embedding 能力的本地模型，或切换到远端 API。");
-  }
-  return {
-    baseUrl: getRuntimeBaseUrl(runtime),
-    chatModel: runtime.modelId,
-    embeddingModel: runtime.modelId,
-    ...(settings.inference?.temperature === undefined ? {} : { temperature: settings.inference.temperature }),
-    ...(settings.inference?.maxTokens === undefined ? {} : { maxTokens: settings.inference.maxTokens }),
-  };
-}
-
 async function getRuntimeConfigFromRequest(
   request: Partial<InferenceRuntimeConfig> = {},
 ): Promise<InferenceRuntimeConfig> {
@@ -1084,7 +1080,7 @@ async function getRuntimeConfigFromRequest(
     ...request,
     modelPath: request.modelPath ?? settings.inferenceRuntime?.modelPath ?? "",
   });
-  if (settings.inferenceRuntime?.provider !== normalized.provider || settings.inferenceRuntime?.modelId !== normalized.modelId) {
+  if (settings.inferenceRuntime?.runtimeKind !== normalized.runtimeKind || settings.inferenceRuntime?.modelId !== normalized.modelId) {
     await store.saveSettings({ inferenceRuntime: normalized });
   }
   return normalized;
@@ -1164,6 +1160,10 @@ function setupIpc() {
     return getPddService().stopAccount(request.accountId);
   });
 
+  handle("account.availability.set", async (request) => {
+    return runGoverned("pdd", () => getPddService().setAccountAvailability(request.accountId, request.status));
+  });
+
   handle("account.logout", async (request) => {
     return getPddService().logoutAccount(request.accountId);
   });
@@ -1195,7 +1195,6 @@ function setupIpc() {
     const result = await generateAndPersistReply(request, {
       store,
       createInferenceClient,
-      createKnowledgeService,
       sendGoodsLink: sendGoodsLinkTool,
       transferConversation: transferConversationTool,
     });
@@ -1214,48 +1213,6 @@ function setupIpc() {
     if (!draft) return { ok: false, error: "找不到人工处理草稿。" };
     await store.saveDraft({ ...draft, operatorNote: request.note, updatedAt: new Date().toISOString() });
     return { ok: true };
-  });
-
-  handle("knowledge.import", async (request) => {
-    try {
-      const store = await getStore();
-      const knowledge = await createKnowledgeService();
-      const document = await knowledge.importFile(request);
-      await store.saveKnowledgeDocument(document);
-      await store.appendLog("info", `知识库文件已导入：${document.fileName}`);
-      return { ok: true, document };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const store = await getStore();
-      await appendDiagnostic(store, "knowledge", "import_failure", {
-        filePath: request.filePath,
-        scope: request.scope,
-        shopId: request.shopId ?? "",
-        error: message,
-      });
-      return { ok: false, error: sanitizeUserFacingError(message) };
-    }
-  });
-
-  handle("knowledge.list", async (request) => {
-    const store = await getStore();
-    return { documents: await store.listKnowledgeDocuments(request ?? {}) };
-  });
-
-  handle("knowledge.search", async (request) => {
-    try {
-      const knowledge = await createKnowledgeService();
-      return { results: await knowledge.search(request) };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const store = await getStore();
-      await appendDiagnostic(store, "knowledge", "search_failure", {
-        shopId: request.shopId ?? "",
-        query: request.query,
-        error: message,
-      });
-      return { results: [] };
-    }
   });
 
   handle("knowledge.governed.list", async (request) => {
@@ -1298,6 +1255,45 @@ function setupIpc() {
       return { ok: true, ...result };
     } catch (error) {
       return { ok: false, created: 0, skippedDuplicates: 0, failed: request.rows.length, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
+    }
+  });
+
+  handle("knowledge.document.pick", async () => {
+    try {
+      const win = mainWindow ?? BrowserWindow.getAllWindows()[0];
+      const options = {
+        title: "选择要解析的文档",
+        properties: ["openFile" as const],
+        // ponytail: txt/md/json read natively. pdf/docx need a parser dep
+        // (mammoth/pdf-parse) — add the filter + parse branch once it's installed.
+        filters: [{ name: "文档", extensions: ["txt", "md", "markdown", "json"] }],
+      };
+      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      if (result.canceled || !result.filePaths[0]) {
+        return { ok: true, canceled: true };
+      }
+      return { ok: true, filePath: result.filePaths[0], fileName: path.basename(result.filePaths[0]) };
+    } catch (error) {
+      return { ok: false, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
+    }
+  });
+
+  handle("knowledge.document.import", async (request) => {
+    try {
+      const text = await readDocumentText(request.filePath);
+      if (!text.trim()) {
+        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "文档为空或无法解析出文本。" };
+      }
+      const client = await createInferenceClient();
+      const rows = await extractKnowledgeEntries(text, client);
+      if (!rows.length) {
+        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "未能从文档中抽取出知识条目。" };
+      }
+      const store = await getStore();
+      const result = await store.importCustomerServiceKnowledgeRows({ shopId: request.shopId, rows, reviewState: "draft" });
+      return { ok: true, entries: rows.length, ...result };
+    } catch (error) {
+      return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
     }
   });
 
@@ -1464,7 +1460,7 @@ function setupIpc() {
         ...(mmprojPath ? { mmprojPath } : {}),
       });
       await store.saveSettings({ inferenceRuntime: config });
-      return { ok: true, modelPath };
+      return { ok: true, modelPath, ...(mmprojPath ? { mmprojPath } : {}) };
     } catch (error) {
       const message = toSafeRuntimeError(error);
       const store = await getStore();
@@ -1473,6 +1469,39 @@ function setupIpc() {
         error: message,
       });
       return { ok: false, modelPath: "", error: sanitizeUserFacingError(message) };
+    }
+  });
+
+  handle("inference.model.delete", async (request) => {
+    try {
+      const modelIds = [...new Set([request.modelId, ...(request.auxiliaryModelIds ?? [])])];
+      const manager = getModelScopeManager("local");
+      const deleteResults = await Promise.all(modelIds.map((modelId) => manager.deleteModel(modelId)));
+      const deleted = deleteResults.filter(Boolean).length;
+
+      const store = await getStore();
+      const settings = await store.getSettings();
+      const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
+      const shouldClearModelPath = runtime.modelId === request.modelId;
+      const shouldClearMmprojPath = Boolean(runtime.mmprojModelId && (request.auxiliaryModelIds ?? []).includes(runtime.mmprojModelId));
+      if (shouldClearModelPath || shouldClearMmprojPath) {
+        await store.saveSettings({
+          inferenceRuntime: {
+            ...runtime,
+            ...(shouldClearModelPath ? { modelPath: "" } : {}),
+            ...(shouldClearMmprojPath ? { mmprojPath: "" } : {}),
+          },
+        });
+      }
+      return { ok: true, deleted };
+    } catch (error) {
+      const message = toSafeRuntimeError(error);
+      const store = await getStore();
+      await appendDiagnostic(store, "inference", "model_delete_failure", {
+        modelId: request.modelId,
+        error: message,
+      });
+      return { ok: false, deleted: 0, error: sanitizeUserFacingError(message) };
     }
   });
 
@@ -1524,7 +1553,7 @@ function setupIpc() {
         (item) => item.model.url === runtimeConfig.modelId || item.model.id === runtimeConfig.modelId,
       );
       const mmproj = profile?.auxiliaryModels?.find((item) => item.purpose === "mmproj");
-      if (!modelPath || profile?.model.sha256) {
+      if (!modelPath || !existsSync(modelPath)) {
         const progressRequestId = requestId ?? crypto.randomUUID();
         modelPath = await getModelScopeManager("local").ensureModel(runtimeConfig.modelId, {
           ...(profile?.model.sha256 ? { expectedSha256: profile.model.sha256 } : {}),
@@ -1535,7 +1564,7 @@ function setupIpc() {
           ),
         });
       }
-      if (mmproj && (!mmprojPath || mmproj.sha256)) {
+      if (mmproj && (!mmprojPath || !existsSync(mmprojPath))) {
         const progressRequestId = requestId ?? crypto.randomUUID();
         mmprojPath = await getModelScopeManager("local").ensureModel(mmproj.url, {
           ...(mmproj.sha256 ? { expectedSha256: mmproj.sha256 } : {}),
@@ -1583,24 +1612,17 @@ function setupIpc() {
       const baseUrl = getRuntimeBaseUrl(runtimeConfig);
       const inference = (await store.getSettings()).inference;
       const chatModel = inference?.chatModel ?? "";
-      const embeddingModel = inference?.embeddingModel ?? "";
       const shouldUseRuntimeChatModel = !chatModel.trim()
-        || isLegacyDefaultLocalModelId(chatModel)
         || chatModel === runtimeConfig.modelId;
-      const shouldUseRuntimeEmbeddingModel = !embeddingModel.trim()
-        || isLegacyDefaultLocalModelId(embeddingModel)
-        || embeddingModel === runtimeConfig.modelId;
       const nextInference = inference
         ? {
             ...inference,
             baseUrl,
             ...(shouldUseRuntimeChatModel ? { chatModel: runtimeConfig.modelId } : {}),
-            ...(shouldUseRuntimeEmbeddingModel ? { embeddingModel: runtimeConfig.modelId } : {}),
           }
         : {
             baseUrl,
             chatModel: runtimeConfig.modelId,
-            embeddingModel: runtimeConfig.modelId,
           };
       await store.saveSettings({ inference: nextInference, inferenceRuntime: { ...runtimeConfig, modelPath, ...(mmprojPath ? { mmprojPath } : {}) } });
       return {
@@ -1640,7 +1662,7 @@ function setupIpc() {
     const store = await getStore();
     const settings = await store.getSettings();
     const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-    if (settings.inferenceRuntime?.provider !== runtime.provider || settings.inferenceRuntime?.modelId !== runtime.modelId) {
+    if (settings.inferenceRuntime?.runtimeKind !== runtime.runtimeKind || settings.inferenceRuntime?.modelId !== runtime.modelId) {
       await store.saveSettings({ inferenceRuntime: runtime });
     }
     const profile = localModelProfiles.find(
@@ -1684,7 +1706,6 @@ function setupIpc() {
     const previous = (await store.getSettings()).inference;
     await store.saveSettings({ inference: request });
     dependencyGovernor.reset("llm");
-    dependencyGovernor.reset("embedding_vector");
     if (request.apiKey && request.apiKey !== previous?.apiKey) {
       await appendDiagnostic(store, "inference", "api_key_rotated", {
         baseUrl: request.baseUrl,
@@ -1741,15 +1762,12 @@ function setupIpc() {
       &&
       settings.inference
       && defaultChatProfile
-      && (
-        isLegacyDefaultLocalModelId(settings.inference.chatModel)
-        || settings.inference.chatModel === runtime.modelId
-      ),
+      && settings.inference.chatModel === runtime.modelId,
     );
     if (
       settings.modelProvider !== modelProvider
       ||
-      settings.inferenceRuntime?.provider !== runtime.provider
+      settings.inferenceRuntime?.runtimeKind !== runtime.runtimeKind
       || settings.inferenceRuntime?.modelId !== runtime.modelId
       || settings.inferenceRuntime?.modelPath !== runtime.modelPath
       || shouldNormalizeChatModel

@@ -6,7 +6,8 @@ import GlobalStyles from "@mui/material/GlobalStyles";
 import { makeTheme, themeCssVariables } from "./theme";
 import { App } from "./App";
 
-import "material-symbols/outlined.css";
+import "material-symbols/rounded.css";
+import "./fonts/fonts.css";
 
 function useSystemMode(): "light" | "dark" {
   const [mode, setMode] = useState<"light" | "dark">(() =>

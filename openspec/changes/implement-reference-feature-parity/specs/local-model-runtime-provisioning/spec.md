@@ -11,11 +11,11 @@ The system SHALL preserve local-model operation as a first-class supported infer
 - **AND** the acceptance record includes the local runtime name, runtime version, model identifier, model checksum or manifest version, platform, and commit SHA
 
 ### Requirement: Responses API-Compatible Runtime Contract
-The system SHALL use a Responses API-compatible model contract for both local and remote inference providers.
+The system SHALL use a Responses API-compatible model contract for both kinds of ModelProvider. A ModelProvider is the supplier of models behind this unified contract and is one of exactly two kinds: a `remote` provider (any OpenAI-compatible cloud endpoint such as DashScope/Qwen) or a `local` provider (an app-managed `llama-server`). Both kinds expose the same chat, embedding, and multimodal surface; only the local kind additionally owns a managed runtime.
 
 #### Scenario: Agent uses model tools
 - **GIVEN** the Agent needs model-driven tool use
-- **WHEN** it sends a request to either a local runtime or a remote model provider
+- **WHEN** it sends a request to either a local or a remote ModelProvider
 - **THEN** the request uses the same Responses-style contract for messages, tool definitions, tool calls, tool outputs, and final responses
 - **AND** the Agent does not depend on model-authored plain-text JSON as the primary tool-call mechanism
 
@@ -72,7 +72,7 @@ The system SHALL declare whether each configured local model profile supports ch
 
 #### Scenario: Release baseline is selected
 - **WHEN** the release model profile is defined
-- **THEN** the default candidate is a small Gemma-family local multimodal model unless model licensing, runtime compatibility, or platform viability disqualifies it
+- **THEN** the default candidate is Qwen2.5-VL 3B and the optional higher-quality candidate is Qwen2.5-VL 7B unless model licensing, runtime compatibility, or platform viability disqualifies either profile
 - **AND** the selected profile records exact model ID, license, file size, checksum, supported capabilities, and platform runtime requirements
 
 ### Requirement: Platform Release Packaging

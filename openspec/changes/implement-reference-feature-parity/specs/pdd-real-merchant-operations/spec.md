@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Real Pinduoduo account lifecycle
-The system SHALL support real Pinduoduo merchant login, session extraction, account start, online/offline status, and account stop.
+The system SHALL support real Pinduoduo merchant login, session extraction, account start, customer-service availability status, and account stop.
 
 #### Scenario: Merchant login succeeds
 - **WHEN** a merchant completes real Pinduoduo login in the desktop app
@@ -10,6 +10,10 @@ The system SHALL support real Pinduoduo merchant login, session extraction, acco
 #### Scenario: Account starts
 - **WHEN** an operator starts a real Pinduoduo account
 - **THEN** the system retrieves a real chat token, opens the real WebSocket, records connection state, and does not use a mock endpoint
+
+#### Scenario: Operator changes customer-service availability
+- **WHEN** an operator selects online, busy/resting, or offline for a real Pinduoduo account
+- **THEN** the system calls the real `set_csstatus` endpoint with the calibrated PDD status code, persists the sanitized account status, and does not require the operator to change it manually in Pinduoduo
 
 ### Requirement: Real Pinduoduo messaging APIs
 The system SHALL send real text messages, image messages where supported, goods-card messages, and conversation-transfer commands through real Pinduoduo endpoints.

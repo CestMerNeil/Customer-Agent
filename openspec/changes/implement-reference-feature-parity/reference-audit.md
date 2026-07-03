@@ -21,7 +21,7 @@ Audited commit: `59467291c64dd69335d3e52612e38556a1833865`
 
 ## Code-Audited Must Scope
 
-- Real PDD chat token retrieval, user info, shop info, online/offline status.
+- Real PDD chat token retrieval, user info, shop info, and customer-service availability status: `0` rest/busy, `1` online, `3` offline.
 - Real text send through `plateau/chat/send_message`.
 - Real goods-card send through `plateau/message/send/mallGoodsCard`.
 - Real customer-service list and transfer through reference transfer APIs.

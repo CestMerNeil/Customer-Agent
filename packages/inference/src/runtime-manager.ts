@@ -16,29 +16,54 @@ export interface RuntimeProcessStartConfig {
 
 export class RuntimeProcessManager {
   private process: ChildProcess | undefined;
+  private exited = false;
+  private lastStderr = "";
 
   constructor(private readonly options: { spawn?: SpawnLike } = {}) {}
 
   async start(config: RuntimeProcessStartConfig): Promise<{ running: boolean; pid?: number }> {
-    if (this.process?.pid) {
+    if (this.process?.pid && !this.exited) {
       return { running: true, pid: this.process.pid };
     }
     const spawn = this.options.spawn ?? nodeSpawn;
     const args = config.args ?? [];
-    this.process = spawn(config.command, args, {
+    this.exited = false;
+    this.lastStderr = "";
+    const child = spawn(config.command, args, {
       stdio: "pipe",
       env: process.env,
     });
-    return { running: true, ...(this.process.pid ? { pid: this.process.pid } : {}) };
+    this.process = child;
+    // llama-server logs verbosely to stdout/stderr while loading the model. With
+    // stdio "pipe" and no reader the OS pipe buffer fills (~64KB) and the child
+    // blocks mid-load, so the model never comes up. Drain both streams, keeping a
+    // tail of stderr so a failed start surfaces a real error instead of a timeout.
+    child.stdout?.on("data", () => {});
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      this.lastStderr = (this.lastStderr + chunk.toString()).slice(-4000);
+    });
+    child.on("error", (error: Error) => {
+      this.exited = true;
+      this.lastStderr = `${this.lastStderr}\n${error.message}`.slice(-4000);
+    });
+    child.on("exit", () => {
+      this.exited = true;
+    });
+    return { running: true, ...(child.pid ? { pid: child.pid } : {}) };
   }
 
   async stop(): Promise<void> {
     this.process?.kill();
     this.process = undefined;
+    this.exited = false;
   }
 
   status(): { running: boolean; pid?: number } {
-    return this.process?.pid ? { running: true, pid: this.process.pid } : { running: false };
+    return this.process?.pid && !this.exited ? { running: true, pid: this.process.pid } : { running: false };
+  }
+
+  lastError(): string | undefined {
+    return this.lastStderr.trim() || undefined;
   }
 }
 
@@ -102,6 +127,23 @@ export class ModelScopeManager {
     await rename(partialPath, filePath);
     await verifyFileChecksum(filePath, resolvedOptions.expectedSha256);
     return filePath;
+  }
+
+  async deleteModel(modelId: string): Promise<boolean> {
+    const trimmed = modelId.trim();
+    if (!trimmed || !isRemoteModel(trimmed)) {
+      return false;
+    }
+
+    const cacheDir = path.join(this.options.cacheDir, "downloads");
+    const filePath = path.join(cacheDir, modelFileName(trimmed));
+    const partialPath = `${filePath}.part`;
+    const existed = isExistingFile(filePath) || isExistingFile(partialPath);
+    await Promise.all([
+      rm(filePath, { force: true }),
+      rm(partialPath, { force: true }),
+    ]);
+    return existed;
   }
 }
 

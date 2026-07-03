@@ -9,7 +9,6 @@ describe("dependency governance", () => {
     expect(createDefaultDependencyPolicies().map((policy) => policy.id)).toEqual([
       "pdd",
       "llm",
-      "embedding_vector",
       "product_sync",
     ]);
   });

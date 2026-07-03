@@ -42,7 +42,6 @@ beforeEach(() => {
         };
       }
       if (channel === "log.list") return { logs: [] };
-      if (channel === "knowledge.list") return { documents: [] };
       if (channel === "inference.health") return { ok: false, error: "未配置" };
       return { ok: true };
     }),
@@ -58,14 +57,14 @@ describe("App", () => {
   it("renders the task-oriented navigation", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "拼多多 AI 客服助手" })).toBeInTheDocument();
+    expect(screen.getByText("客服助手")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实时工作台" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "概览" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "队列" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Agent 审计" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "AI 处理记录" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "账号" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "知识库" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "模型" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "日志" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "发布" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "设置" })).toBeInTheDocument();
   });
@@ -73,7 +72,7 @@ describe("App", () => {
   it("lands on the overview by default", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实时工作台" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "概览" })).toHaveAttribute("aria-current", "page");
   });
 
@@ -84,7 +83,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "账号" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "账号" })).toHaveAttribute("aria-current", "page");
-    expect(await screen.findByText("等待添加拼多多客服账号。")).toBeInTheDocument();
+    expect(await screen.findByText("等待添加拼多多客服账号")).toBeInTheDocument();
   });
 
   it("opens the queue operations page with live queue metrics", async () => {
@@ -92,7 +91,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("option", { name: "队列" }));
 
-    expect(screen.getByRole("heading", { name: "队列" })).toBeInTheDocument();
+    // The design repeats "消息工作流" as both the page title and a panel
+    // heading inside the page, so disambiguate by heading level.
+    expect(screen.getByRole("heading", { name: "消息工作流", level: 1 })).toBeInTheDocument();
     expect(await screen.findByText("积压深度")).toBeInTheDocument();
     expect((await screen.findAllByText("1")).length).toBeGreaterThan(0);
   });
@@ -103,8 +104,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("option", { name: "发布" }));
 
     expect(screen.getByRole("heading", { name: "发布" })).toBeInTheDocument();
-    expect(await screen.findByText("Release Gate 未通过")).toBeInTheDocument();
-    expect(await screen.findByText("test-commit")).toBeInTheDocument();
+    expect(await screen.findByText("门禁未通过")).toBeInTheDocument();
+    expect(await screen.findByText(/commit test-co/)).toBeInTheDocument();
   });
 
   it("updates the top inference status when model health changes", async () => {

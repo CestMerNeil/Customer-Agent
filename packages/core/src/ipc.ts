@@ -3,6 +3,7 @@ import type { AcceptanceCapabilityMatrixRow } from "./acceptance.js";
 import type { DependencySnapshot } from "./dependency-governance.js";
 import type {
   AccountRecord,
+  AccountStatus,
   AgentAuditRecord,
   AppSettings,
   GovernedKnowledgeKind,
@@ -11,9 +12,6 @@ import type {
   InboundQueueRecord,
   InferenceConfig,
   InferenceRuntimeConfig,
-  KnowledgeDocumentRecord,
-  KnowledgeScope,
-  KnowledgeSearchResult,
   LogLevel,
   LogRecord,
   MessageRecord,
@@ -60,17 +58,6 @@ export interface PddRuntimeState {
   requiresRelogin?: boolean;
 }
 
-export interface KnowledgeImportRequest {
-  filePath: string;
-  scope: KnowledgeScope;
-  shopId?: string;
-}
-
-export interface KnowledgeSearchRequest {
-  query: string;
-  shopId?: string;
-  topK?: number;
-}
 
 export interface ModelDownloadProgressEvent {
   requestId: string;
@@ -95,6 +82,10 @@ export interface IpcContract {
   };
   "account.stop": {
     request: { accountId: string };
+    response: { ok: boolean; error?: string };
+  };
+  "account.availability.set": {
+    request: { accountId: string; status: Extract<AccountStatus, "online" | "busy" | "offline"> };
     response: { ok: boolean; error?: string };
   };
   "account.logout": {
@@ -137,18 +128,6 @@ export interface IpcContract {
     request: { draftId: string; note: string };
     response: { ok: boolean; error?: string };
   };
-  "knowledge.import": {
-    request: KnowledgeImportRequest;
-    response: { ok: boolean; document?: KnowledgeDocumentRecord; error?: string };
-  };
-  "knowledge.list": {
-    request: { scope?: KnowledgeScope; shopId?: string } | undefined;
-    response: { documents: KnowledgeDocumentRecord[] };
-  };
-  "knowledge.search": {
-    request: KnowledgeSearchRequest;
-    response: { results: KnowledgeSearchResult[] };
-  };
   "knowledge.governed.list": {
     request: { kind?: GovernedKnowledgeKind; shopId?: string; citationId?: string; eligibleOnly?: boolean } | undefined;
     response: { records: GovernedKnowledgeRecord[] };
@@ -182,6 +161,16 @@ export interface IpcContract {
       reviewState?: GovernedKnowledgeRecord["reviewState"];
     };
     response: { ok: boolean; created: number; skippedDuplicates: number; failed: number; error?: string };
+  };
+  // LLM-wiki ingestion: pick a document, then have the model distil it into
+  // reviewable governed entries (replaces blind chunk+embedding import).
+  "knowledge.document.pick": {
+    request: undefined;
+    response: { ok: boolean; filePath?: string; fileName?: string; canceled?: boolean; error?: string };
+  };
+  "knowledge.document.import": {
+    request: { shopId: string; filePath: string };
+    response: { ok: boolean; created: number; skippedDuplicates: number; failed: number; entries?: number; error?: string };
   };
   "product.sync.start": {
     request: { accountId: string; mode: ProductSyncMode; pageSize?: number; maxPages?: number };
@@ -258,7 +247,11 @@ export interface IpcContract {
   };
   "inference.modelscope.download": {
     request: { modelId: string; expectedSha256?: string; requestId?: string };
-    response: { ok: boolean; modelPath: string; error?: string };
+    response: { ok: boolean; modelPath: string; mmprojPath?: string; error?: string };
+  };
+  "inference.model.delete": {
+    request: { modelId: string; auxiliaryModelIds?: string[] };
+    response: { ok: boolean; deleted: number; error?: string };
   };
   "settings.get": {
     request: undefined;

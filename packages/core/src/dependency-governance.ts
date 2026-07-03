@@ -1,4 +1,4 @@
-export type DependencyId = "pdd" | "llm" | "embedding_vector" | "product_sync";
+export type DependencyId = "pdd" | "llm" | "product_sync";
 export type CircuitState = "closed" | "open" | "half_open";
 
 export interface DependencyPolicy {
@@ -32,7 +32,6 @@ export function createDefaultDependencyPolicies(): DependencyPolicy[] {
   return [
     { id: "pdd", maxRequestsPerWindow: 30, windowMs: 1_000, failureThreshold: 5, cooldownMs: 30_000 },
     { id: "llm", maxRequestsPerWindow: 4, windowMs: 1_000, failureThreshold: 3, cooldownMs: 20_000 },
-    { id: "embedding_vector", maxRequestsPerWindow: 8, windowMs: 1_000, failureThreshold: 3, cooldownMs: 20_000 },
     { id: "product_sync", maxRequestsPerWindow: 2, windowMs: 1_000, failureThreshold: 5, cooldownMs: 60_000 },
   ];
 }

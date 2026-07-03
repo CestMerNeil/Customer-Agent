@@ -7,9 +7,11 @@ export type NavItem = {
   label: string;
   icon: string;
   section: string;
+  /** Right-aligned numeric badge (design: pending-review count on 队列). */
+  badge?: number;
 };
 
-export const SIDEBAR_WIDTH = 232;
+export const SIDEBAR_WIDTH = 212;
 
 interface NavigationRailProps {
   items: readonly NavItem[];
@@ -18,7 +20,8 @@ interface NavigationRailProps {
 }
 
 export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId, onSelect }) => {
-  const sections = groupBySection(items);
+  const pinnedItem = items.find((item) => item.id === "settings");
+  const sections = groupBySection(items.filter((item) => item.id !== "settings"));
 
   return (
     <Box
@@ -26,119 +29,133 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({ items, activeId,
       aria-label="主导航"
       sx={{
         width: SIDEBAR_WIDTH,
-        height: "100vh",
-        position: "fixed",
-        left: 0,
-        top: 0,
-        zIndex: (theme) => theme.zIndex.appBar + 1,
+        flex: "0 0 auto",
         display: "flex",
         flexDirection: "column",
-        bgcolor: tokens.color.surface.sidebar,
-        backdropFilter: "saturate(180%) blur(24px)",
-        WebkitBackdropFilter: "saturate(180%) blur(24px)",
+        bgcolor: tokens.color.surface.base,
         borderRight: `1px solid ${tokens.color.border.hairline}`,
       }}
     >
       {/* Draggable title region; leaves room for inset traffic lights. */}
       <Box
         sx={{
-          pt: "30px",
-          px: 2,
-          pb: 1.5,
-          WebkitAppRegion: "drag",
+          px: "14px",
+          pt: "18px",
+          pb: "10px",
         }}
       >
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", px: "6px", pb: "8px" }}>
           <Box
             aria-hidden
             sx={{
-              width: 26,
-              height: 26,
-              borderRadius: `${tokens.radius.sm}px`,
-              bgcolor: tokens.color.accent.main,
-              color: tokens.color.accent.contrast,
+              width: 28,
+              height: 28,
+              borderRadius: `${tokens.radius.md}px`,
+              bgcolor: "#0a0a0a",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 18,
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>smart_toy</span>
+            <Box sx={{ width: 9, height: 9, borderRadius: "2px", bgcolor: tokens.color.state.success }} />
           </Box>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-            AI 客服助手
+          <Typography sx={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>
+            客服助手
           </Typography>
         </Stack>
       </Box>
 
-      <Box sx={{ flexGrow: 1, overflowY: "auto", px: 1.25, pb: 2 }}>
+      <Box sx={{ flexGrow: 1, overflowY: "auto", px: "14px", pb: 2 }}>
         {sections.map((section) => (
           <Box key={section.name} sx={{ mb: 1.5 }}>
             <Typography
-              variant="overline"
-              sx={{ display: "block", px: 1.25, py: 0.5, color: tokens.color.text.tertiary }}
+              sx={{
+                display: "block",
+                fontSize: "9px",
+                fontWeight: 700,
+                letterSpacing: ".16em",
+                color: "#c2c2c2",
+                p: "8px 8px 6px",
+              }}
             >
               {section.name}
             </Typography>
-            <Stack spacing={0.25} role="listbox" aria-label={section.name}>
-              {section.items.map((item) => {
-                const isActive = item.id === activeId;
-                return (
-                  <Box
-                    key={item.id}
-                    component="button"
-                    type="button"
-                    role="option"
-                    onClick={() => onSelect(item.id)}
-                    aria-label={item.label}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-selected={isActive}
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.25,
-                      width: "100%",
-                      textAlign: "left",
-                      px: 1.25,
-                      py: 0.75,
-                      border: "none",
-                      borderRadius: `${tokens.radius.sm}px`,
-                      cursor: "pointer",
-                      color: isActive ? tokens.color.accent.contrast : tokens.color.text.primary,
-                      bgcolor: isActive ? tokens.color.accent.main : "transparent",
-                      transition: `background-color ${tokens.motion.duration.fast} ${tokens.motion.easing.standard}`,
-                      WebkitAppRegion: "no-drag",
-                      "&:hover": {
-                        bgcolor: isActive ? tokens.color.accent.main : tokens.color.surface.hover,
-                      },
-                      "&:focus-visible": {
-                        outline: `2px solid ${tokens.color.border.focus}`,
-                        outlineOffset: 2,
-                      },
-                    }}
-                  >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{
-                        fontSize: 19,
-                        color: isActive ? tokens.color.accent.contrast : tokens.color.text.secondary,
-                      }}
-                    >
-                      {item.icon}
-                    </span>
-                    <Typography variant="body2" sx={{ fontWeight: isActive ? 600 : 500, color: "inherit" }}>
-                      {item.label}
-                    </Typography>
-                  </Box>
-                );
-              })}
+            <Stack spacing={0} role="listbox" aria-label={section.name}>
+              {section.items.map((item) => (
+                <NavRow key={item.id} item={item} isActive={item.id === activeId} onSelect={onSelect} />
+              ))}
             </Stack>
           </Box>
         ))}
       </Box>
+
+      {pinnedItem && (
+        <Box sx={{ px: "14px", pb: 1.25, pt: 1.25, borderTop: `1px solid ${tokens.color.border.hairline}` }}>
+          <Stack spacing={0.25} role="listbox" aria-label={pinnedItem.section}>
+            <NavRow item={pinnedItem} isActive={pinnedItem.id === activeId} onSelect={onSelect} />
+          </Stack>
+        </Box>
+      )}
     </Box>
   );
 };
+
+const NavRow: React.FC<{ item: NavItem; isActive: boolean; onSelect: (id: string) => void }> = ({ item, isActive, onSelect }) => (
+  <Box
+    component="button"
+    type="button"
+    role="option"
+    onClick={() => onSelect(item.id)}
+    aria-label={item.label}
+    aria-current={isActive ? "page" : undefined}
+    aria-selected={isActive}
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      gap: "11px",
+      width: "100%",
+      textAlign: "left",
+      p: "8px 9px",
+      border: "none",
+      borderLeft: `2px solid ${isActive ? tokens.color.state.success : "transparent"}`,
+      borderRadius: 0,
+      cursor: "pointer",
+      color: isActive ? tokens.color.text.primary : "#8a8a8a",
+      bgcolor: "transparent",
+      transition: `background-color ${tokens.motion.duration.fast} ${tokens.motion.easing.standard}`,
+      WebkitAppRegion: "no-drag",
+      "&:hover": {
+        bgcolor: tokens.color.surface.hover,
+      },
+      fontSize: 13,
+      "&:focus-visible": {
+        outline: `2px solid ${tokens.color.border.focus}`,
+        outlineOffset: 2,
+      },
+    }}
+  >
+    <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18, color: "inherit" }}>
+      {item.icon}
+    </span>
+    <Typography sx={{ fontSize: 13, fontWeight: isActive ? 600 : 500, color: "inherit" }}>
+      {item.label}
+    </Typography>
+    {item.badge != null && item.badge > 0 && (
+      <Typography
+        component="span"
+        sx={{
+          ml: "auto",
+          fontFamily: tokens.font.display,
+          fontWeight: 700,
+          fontSize: 11,
+          color: tokens.color.text.primary,
+        }}
+      >
+        {item.badge}
+      </Typography>
+    )}
+  </Box>
+);
 
 function groupBySection(items: readonly NavItem[]): Array<{ name: string; items: NavItem[] }> {
   const order: string[] = [];

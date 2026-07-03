@@ -382,6 +382,32 @@ describe("PddService multi-account runtime state", () => {
     expect(saved).not.toContainEqual(expect.objectContaining({ id: "account-b", status: "offline" }));
   });
 
+  it("sets real customer-service availability without stopping the connection", async () => {
+    let account: AccountRecord = {
+      ...accountRecord("account-a", "shop-a"),
+      cookies: JSON.stringify({ PDDAccessToken: "token" }),
+    };
+    const saved: AccountRecord[] = [];
+    const setOnlineStatus = vi.fn(async () => true);
+    const service = new PddService({
+      getAccount: async (id) => id === account.id ? account : undefined,
+      saveAccount: async (input) => {
+        account = { ...account, ...input, id: input.id ?? account.id };
+        saved.push(account);
+        return account;
+      },
+      log: async () => undefined,
+    });
+    (service as unknown as { createApi: () => { setOnlineStatus: typeof setOnlineStatus } }).createApi = () => ({ setOnlineStatus });
+    (service as unknown as { connections: Map<string, unknown> }).connections.set(account.id, runtimeConnection(account.id));
+
+    await expect(service.setAccountAvailability(account.id, "busy")).resolves.toEqual({ ok: true });
+
+    expect(setOnlineStatus).toHaveBeenCalledWith("busy");
+    expect(saved.at(-1)).toMatchObject({ id: account.id, status: "busy" });
+    expect(service.getAccountRuntimeState(account.id)).toMatchObject({ state: "running" });
+  });
+
   it("logs out an account by clearing stored cookies and browser session", async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "customer-agent-pdd-"));
     try {

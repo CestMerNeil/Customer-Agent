@@ -64,6 +64,14 @@ export interface PddCustomerServiceAccount {
   status?: string;
 }
 
+export type PddCustomerServiceAvailability = "online" | "busy" | "offline";
+
+const pddCustomerServiceStatusCode: Record<PddCustomerServiceAvailability, "1" | "0" | "3"> = {
+  online: "1",
+  busy: "0",
+  offline: "3",
+};
+
 interface PddResponse {
   success?: boolean;
   result?: Record<string, unknown>;
@@ -115,9 +123,9 @@ export class PddApi {
     };
   }
 
-  async setOnlineStatus(status: string): Promise<boolean> {
+  async setOnlineStatus(status: PddCustomerServiceAvailability): Promise<boolean> {
     const response = await this.http.postJson<PddResponse>(`${pddHttpBaseUrl()}/plateau/chat/set_csstatus`, {
-      data: { cmd: "set_csstatus", status },
+      data: { cmd: "set_csstatus", status: pddCustomerServiceStatusCode[status] },
       client: "WEB",
     });
     ensureSuccess(response, "设置客服状态失败");
