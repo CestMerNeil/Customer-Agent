@@ -102,6 +102,8 @@ export type {
 export type {
   AccountLoginRequest,
   AccountLoginResult,
+  AppUpdateState,
+  AppUpdateStatus,
   GenerateReplyRequest,
   GenerateReplyResult,
   IpcChannel,

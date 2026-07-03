@@ -34,6 +34,7 @@ import { PddApi, PddBrowserHttpClient, PddHttpClient, PddProductSyncService, Pdd
 import type { ProductKnowledgeExtractionInput, ProductKnowledgeExtractionResult } from "@customer-agent/pdd";
 import { appendDiagnostic, generateAndPersistReply, runInboundHandlerChain, sanitizeUserFacingError } from "./reply.js";
 import { extractKnowledgeEntries } from "./knowledge-extract.js";
+import { checkForAppUpdates, getAppUpdateStatus, installDownloadedAppUpdate, setupAppUpdater } from "./updater.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -1128,6 +1129,10 @@ function setupIpc() {
     return { ok: true, worker: "ready" };
   });
 
+  handle("app.update.status", () => getAppUpdateStatus());
+  handle("app.update.check", () => checkForAppUpdates());
+  handle("app.update.install", () => installDownloadedAppUpdate());
+
   handle("account.login", async (request) => {
     const store = await getStore();
     const result = await getPddService().login(request);
@@ -1950,6 +1955,12 @@ app.whenReady().then(async () => {
     configureBundledPlaywright();
     await createWindow();
     setupIpc();
+    setupAppUpdater();
+    if (app.isPackaged) {
+      setTimeout(() => {
+        void checkForAppUpdates();
+      }, 5_000);
+    }
     void processInboundQueue();
   } catch (error) {
     console.error("Customer Agent startup failed", error);

@@ -67,6 +67,27 @@ export interface ModelDownloadProgressEvent {
   percent?: number;
 }
 
+export type AppUpdateState =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+export interface AppUpdateStatus {
+  state: AppUpdateState;
+  version: string;
+  enabled: boolean;
+  latestVersion?: string;
+  percent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  error?: string;
+}
+
 export interface IpcContract {
   "account.login": {
     request: AccountLoginRequest;
@@ -304,6 +325,18 @@ export interface IpcContract {
   "app.health": {
     request: undefined;
     response: { ok: boolean; worker: "starting" | "ready" | "stopped" | "error" };
+  };
+  "app.update.status": {
+    request: undefined;
+    response: AppUpdateStatus;
+  };
+  "app.update.check": {
+    request: undefined;
+    response: AppUpdateStatus;
+  };
+  "app.update.install": {
+    request: undefined;
+    response: { ok: boolean; error?: string };
   };
 }
 

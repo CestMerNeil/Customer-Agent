@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Button, InputBase, Stack, Typography } from "@mui/material";
+import type { AppUpdateStatus } from "@customer-agent/core";
 import { tokens } from "../../theme";
 import { useAsync } from "../useAsync";
 
@@ -17,6 +18,11 @@ export const SettingsPage: React.FC = () => {
   const [businessStart, setBusinessStart] = useState("09:00");
   const [businessEnd, setBusinessEnd] = useState("21:00");
   const [message, setMessage] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({
+    state: "disabled",
+    version: (import.meta as { env?: Record<string, string> }).env?.VITE_APP_VERSION ?? "0.0.0",
+    enabled: false,
+  });
   const logs = useAsync(() => window.customerAgent.invoke("log.list", { limit: 100 }), []);
 
   useEffect(() => {
@@ -28,11 +34,32 @@ export const SettingsPage: React.FC = () => {
     });
   }, []);
 
+  useEffect(() => {
+    void window.customerAgent.invoke("app.update.status", undefined).then(setUpdateStatus);
+    return window.customerAgent.on("app.update.status", setUpdateStatus);
+  }, []);
+
   const save = async () => {
     await window.customerAgent.invoke("settings.save", {
       businessHours: { start: businessStart, end: businessEnd },
     });
     setMessage("设置已保存");
+  };
+
+  const checkForUpdates = async () => {
+    setMessage(null);
+    const status = await window.customerAgent.invoke("app.update.check", undefined);
+    setUpdateStatus(status);
+    if (status.state === "disabled") {
+      setMessage("自动更新仅在安装包中启用");
+    }
+  };
+
+  const installUpdate = async () => {
+    const result = await window.customerAgent.invoke("app.update.install", undefined);
+    if (!result.ok) {
+      setMessage(result.error ?? "还没有下载完成的新版本");
+    }
   };
 
   const exportLogs = () => {
@@ -186,9 +213,30 @@ export const SettingsPage: React.FC = () => {
             </Box>
           </Typography>
           <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "2px" }}>
-            本地构建 · 未接入自动更新
+            {formatUpdateStatus(updateStatus)}
           </Typography>
         </Box>
+        <Stack direction="row" spacing={1} sx={{ flex: "none" }}>
+          <Button
+            variant="outlined"
+            onClick={checkForUpdates}
+            disabled={updateStatus.state === "checking" || updateStatus.state === "downloading"}
+            startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18 }}>sync</span>}
+            sx={{ height: 34, minHeight: 34, px: "12px", fontSize: 11, fontWeight: 600, borderRadius: "8px" }}
+          >
+            检查更新
+          </Button>
+          {updateStatus.state === "downloaded" && (
+            <Button
+              variant="contained"
+              onClick={installUpdate}
+              startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18 }}>restart_alt</span>}
+              sx={{ height: 34, minHeight: 34, px: "12px", fontSize: 11, fontWeight: 600, borderRadius: "8px" }}
+            >
+              重启安装
+            </Button>
+          )}
+        </Stack>
       </Box>
 
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
@@ -217,4 +265,26 @@ function formatLogTime(value: string): string {
 
 function sanitizeDiagnosticText(value: string): string {
   return value.replace(/^诊断\[[^\]]+\]\s*/u, "").replace(/\b(error|message)=/g, "").replace(/\s+/g, " ").trim();
+}
+
+function formatUpdateStatus(status: AppUpdateStatus): string {
+  switch (status.state) {
+    case "disabled":
+      return "自动更新仅在安装包中启用";
+    case "checking":
+      return "正在检查新版本";
+    case "available":
+      return `发现新版本 v${status.latestVersion ?? ""}，正在下载`;
+    case "downloading":
+      return `正在下载更新${typeof status.percent === "number" ? ` · ${Math.round(status.percent)}%` : ""}`;
+    case "downloaded":
+      return `新版本 v${status.latestVersion ?? ""} 已下载，重启后安装`;
+    case "not-available":
+      return "当前已是最新版本";
+    case "error":
+      return "自动更新检查失败";
+    case "idle":
+    default:
+      return "自动更新已接入 GitHub Releases";
+  }
 }

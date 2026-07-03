@@ -16,9 +16,15 @@ function mockBridge() {
     if (channel === "settings.save") {
       return { ok: true, request };
     }
+    if (channel === "app.update.status") {
+      return { state: "idle", version: "1.0.3", enabled: true };
+    }
+    if (channel === "app.update.check") {
+      return { state: "checking", version: "1.0.3", enabled: true };
+    }
     return { ok: true };
   });
-  window.customerAgent = { invoke } as unknown as CustomerAgentBridge;
+  window.customerAgent = { invoke, on: vi.fn(() => vi.fn()) } as unknown as CustomerAgentBridge;
   return invoke;
 }
 
@@ -40,6 +46,17 @@ describe("SettingsPage", () => {
       expect(invoke).toHaveBeenCalledWith("settings.save", {
         businessHours: { start: "08:00", end: "23:00" },
       });
+    });
+  });
+
+  it("allows Windows users to manually check for updates", async () => {
+    const invoke = mockBridge();
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /检查更新/ }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("app.update.check", undefined);
     });
   });
 });

@@ -25,4 +25,9 @@ if (!existsSync(browsersPath)) {
   fail(`unable to resolve bundled Playwright browser path: ${browsersPath}`);
 }
 
+const updateConfigPath = path.join(resourcesRoot, "app-update.yml");
+if (!existsSync(updateConfigPath)) {
+  fail(`unable to resolve packaged update feed config: ${updateConfigPath}`);
+}
+
 console.log(`Packaged Playwright browser path resolved: ${browsersPath}`);
