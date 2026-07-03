@@ -10,7 +10,6 @@ export function normalizePddMessage(payload: Record<string, unknown>, options: N
   const source = Object.keys(messagePayload).length > 0 ? messagePayload : payload;
   const from = asRecord(source.from ?? payload.from);
   const fromRole = stringValue(from.role);
-  const response = stringValue(payload.response);
   const buyerNickname = optionalString(from.nickname ?? source.nickname ?? payload.nickname);
   const messageType = fromRole === "mall_cs"
     ? "mall_cs"

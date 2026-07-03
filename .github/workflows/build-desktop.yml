@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -74,7 +76,13 @@ jobs:
         run: pnpm local-model:validate
 
       - name: Acceptance release gate
-        run: pnpm release:gate -- --commit ${{ github.sha }} --platform ${{ matrix.platform }} --tag ${{ github.ref_name }}
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          if [[ -z "$tag" ]]; then
+            tag="${{ github.ref_name }}"
+          fi
+          pnpm release:gate -- --platform "${{ matrix.platform }}" --tag "$tag" --release-commit "${{ github.sha }}" --allow-ancestor-commit
 
       - name: Package desktop app
         run: ${{ matrix.package-command }}

@@ -6,7 +6,7 @@ import { KnowledgeBaseManager } from "./KnowledgeBaseManager";
 
 function mockBridge() {
   const unsubscribe = vi.fn();
-  const invoke = vi.fn(async (channel: string, request?: unknown) => {
+  const invoke = vi.fn(async (channel: string, _request?: unknown) => {
     if (channel === "knowledge.governed.list") {
       return {
         records: [

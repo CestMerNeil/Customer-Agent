@@ -386,16 +386,6 @@ export const ModelSettings: React.FC = () => {
     }
   };
 
-  const stopRuntime = async () => {
-    const response = await window.customerAgent.invoke("inference.runtime.stop", undefined);
-    setRuntimeStatus((current) => ({
-      ...(current ?? {}),
-      running: response.running,
-    }));
-    setActionMessage(response.ok ? "已释放本地 AI。" : response.error ?? "停止失败。");
-    await refreshRuntimeStatus();
-  };
-
   const restartRuntime = async () => {
     setActionMessage("正在重新启动本地 AI，请稍候...");
     if (runtimeStatus?.running) {

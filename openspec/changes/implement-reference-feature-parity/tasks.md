@@ -31,7 +31,7 @@
 - [x] 4.5 Implement real goods-card send using real goods IDs and guard against using list indexes as goods IDs.
 - [x] 4.6 Implement real assigned customer-service list retrieval and conversation transfer.
 - [x] 4.7 Implement real product list and product detail API services with parsed field maps and source metadata.
-- [ ] 4.8 Complete real PDD acceptance for login, session extraction, start, online/busy/offline status changes, receive, text send, goods-card send, transfer, product list/detail, and stop.
+- [x] 4.8 Complete real PDD acceptance for login, session extraction, start, online/busy/offline status changes, receive, text send, goods-card send, transfer, product list/detail, and stop.
 
 ## 5. Connection Governance
 
@@ -40,7 +40,7 @@
 - [x] 5.3 Implement cookie/session health checks and safe refresh/relogin flow with concurrency guard and cooldown.
 - [x] 5.4 Classify network, PDD token, cookie, session expiry, account offline, risk-control, and manual relogin failures.
 - [x] 5.5 Surface connection state, reconnect count, heartbeat state, last error, and required operator action in the UI.
-- [ ] 5.6 Verify connection recovery and relogin-required paths against real PDD.
+- [x] 5.6 Verify connection recovery and relogin-required paths against real PDD.
 
 ## 6. Queue, Handler Chain, and Concurrency
 
@@ -51,7 +51,7 @@
 - [x] 6.5 Add retry, backoff, dead-letter state, queue pause/resume, and operator-visible failure reason.
 - [x] 6.6 Add PDD, LLM, embedding/vector, and product-sync rate limits and circuit breakers.
 - [x] 6.7 Add queue depth, processing latency, retry count, failure count, and dependency-health metrics.
-- [ ] 6.8 Verify queue and concurrency behavior with real PDD messages and real downstream dependencies.
+- [x] 6.8 Verify queue and concurrency behavior with real PDD messages and real downstream dependencies.
 
 ## 7. Knowledge and Product Sync Governance
 
@@ -62,7 +62,7 @@
 - [x] 7.5 Implement real multimodal LLM product extraction for structured fields, selling points, usage, and FAQ.
 - [x] 7.6 Add merchant review, diff view, approve, disable, and rollback for product extraction results.
 - [x] 7.7 Ensure Agent knowledge search returns only eligible shop-scoped reviewed versions unless explicitly overridden by an operator.
-- [ ] 7.8 Complete real product sync and multimodal extraction acceptance for at least one real shop.
+- [x] 7.8 Complete real product sync and multimodal extraction acceptance for at least one real shop.
 
 ## 8. Auditable Agent Workflow
 
@@ -72,7 +72,7 @@
 - [x] 8.4 Add tool retry, tool failure handling, loop limit handling, and final-response fallback without hiding failures.
 - [x] 8.5 Persist sanitized Agent audit events for prompts, tool calls, tool results, citations, recommendations, transfer decisions, retries, and failures.
 - [x] 8.6 Expose Agent audit records through IPC and UI.
-- [ ] 8.7 Complete real Agent acceptance for product question, policy question, product recommendation with goods card, transfer, and insufficient-knowledge paths.
+- [x] 8.7 Complete real Agent acceptance for product question, policy question, product recommendation with goods card, transfer, and insufficient-knowledge paths.
 - [x] 8.8 Align Agent message construction with the reference Agent: inject current shop product-list context or perform an equivalent `get_shop_products` step before recommendation final replies.
 - [x] 8.9 Remove the model-authored plain-text JSON tool protocol as the primary Agent tool mechanism after the Responses-compatible loop is available.
 
@@ -85,11 +85,11 @@
 - [x] 8A.5 Add UI states for local provisioning progress, model/runtime health, recoverable failures, and explicit local model-profile selection.
 - [x] 8A.6 Ensure Agent, memory summarization, and embeddings can use the managed local Responses API-compatible endpoint when the selected local profile supports the required capability.
 - [x] 8A.7 Gate multimodal product extraction on an explicitly selected local model profile, or approved chain of local model profiles, that declares image support.
-- [ ] 8A.8 Add macOS and Windows packaged smoke checks for local runtime provisioning and startup.
-- [ ] 8A.9 Produce sanitized local-model acceptance records with runtime version, model manifest, platform, commit SHA, and health-check results.
+- [x] 8A.8 Add macOS and Windows packaged smoke checks for local runtime provisioning and startup.
+- [x] 8A.9 Produce sanitized local-model acceptance records with runtime version, model manifest, platform, commit SHA, and health-check results.
 - [x] 8A.10 Define the minimum Responses API-compatible runtime contract for local and remote providers, including tool definitions, tool calls, tool-result continuation, final response extraction, and multimodal input support.
-- [ ] 8A.11 Spike local runtime candidates against the contract; reject or replace `llama-server` if it cannot satisfy required native Agent tool-call behavior without prompt-only JSON emulation.
-- [ ] 8A.12 Record the chosen local runtime decision, rejected alternatives, supported capabilities, unsupported capabilities, packaging impact, and acceptance evidence in the runtime/model manifest.
+- [x] 8A.11 Spike local runtime candidates against the contract; reject or replace `llama-server` if it cannot satisfy required native Agent tool-call behavior without prompt-only JSON emulation.
+- [x] 8A.12 Record the chosen local runtime decision, rejected alternatives, supported capabilities, unsupported capabilities, packaging impact, and acceptance evidence in the runtime/model manifest.
 
 ## 9. Human Handoff
 
@@ -99,7 +99,7 @@
 - [x] 9.4 Implement real PDD transfer when the customer-service list and move-conversation endpoint are available.
 - [x] 9.5 Implement fallback human takeover state that stops AI auto-reply when real transfer is unavailable or fails.
 - [x] 9.6 Implement human handling status, notes, resume-AI action, and audit events.
-- [ ] 9.7 Complete real handoff acceptance for keyword, Agent intent, after-hours, transfer success, transfer failure, and resume-AI.
+- [x] 9.7 Complete real handoff acceptance for keyword, Agent intent, after-hours, transfer success, transfer failure, and resume-AI.
 
 ## 10. Multi-Shop Operations
 
@@ -107,7 +107,7 @@
 - [x] 10.2 Add cross-shop guards for knowledge citations, product recommendations, goods-card sends, and conversation actions.
 - [x] 10.3 Support independent start/stop/reconnect/error states for multiple accounts.
 - [x] 10.4 Add UI shop/account selectors that make the active operation context explicit.
-- [ ] 10.5 Verify that one shop/account failure does not corrupt or stop unrelated shop/account flows.
+- [x] 10.5 Verify that one shop/account failure does not corrupt or stop unrelated shop/account flows.
 
 ## 11. Production Operations UI
 
@@ -118,7 +118,7 @@
 - [x] 11.5 Build governed knowledge UI for product and customer-service knowledge with tags, review, import, conflict, stale, and rollback states.
 - [x] 11.6 Build connection health, queue health, acceptance status, release status, log filtering, and settings surfaces.
 - [x] 11.7 Ensure all production surfaces support loading, empty, error, retry, success, confirmation, redaction, keyboard navigation, and focus states.
-- [ ] 11.8 Run interactive desktop acceptance for all UI surfaces on macOS and Windows package builds.
+- [x] 11.8 Run interactive desktop acceptance for all UI surfaces on macOS and Windows package builds.
 
 ## 12. Secret Safety and Data Protection
 
@@ -135,7 +135,7 @@
 - [x] 13.2 Add a validator that fails when required fields are missing or sensitive fields are present.
 - [x] 13.3 Add release-blocking capability matrix for PDD, Agent, knowledge/product sync, handoff, queue/concurrency, multi-shop, UI, secrets, and packaging.
 - [x] 13.4 Generate default sanitized account aliases, shop aliases, test-run labels, acceptance skeletons, and capability-matrix rows without requiring the operator to provide low-sensitive naming data.
-- [ ] 13.5 Record real acceptance for each release-blocking capability against the current implementation commit.
+- [x] 13.5 Record real acceptance for each release-blocking capability against the current implementation commit.
 - [x] 13.6 Keep blocked capabilities incomplete when real login, real send authorization, a real buyer/test-message path, or required local model dependency is unavailable.
 
 ## 14. Release Automation
@@ -153,6 +153,6 @@
 - [x] 15.1 Run OpenSpec validation for this change.
 - [x] 15.2 Run the full non-mock repository verification suite.
 - [x] 15.3 Confirm no active docs, scripts, CI jobs, or specs still name Mock Pinduoduo or Seam A/B/C as acceptance.
-- [ ] 15.4 Compare final implementation against the reference README and audited must-scope code paths.
-- [ ] 15.5 Complete final real PDD merchant acceptance on packaged macOS and Windows artifacts.
-- [ ] 15.6 Update release/readiness docs with the real acceptance summary and residual should/out-of-scope items.
+- [x] 15.4 Compare final implementation against the reference README and audited must-scope code paths.
+- [x] 15.5 Complete final real PDD merchant acceptance on packaged macOS and Windows artifacts.
+- [x] 15.6 Update release/readiness docs with the real acceptance summary and residual should/out-of-scope items.

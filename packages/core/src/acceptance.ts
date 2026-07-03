@@ -45,6 +45,12 @@ export interface AcceptanceValidationResult {
   errors: string[];
 }
 
+export interface AcceptanceCommitResolutionResult {
+  ok: boolean;
+  commitSha?: string;
+  errors: string[];
+}
+
 export interface BuildAcceptanceSkeletonRequest {
   commitSha: string;
   version?: string;
@@ -169,6 +175,18 @@ export function validateAcceptanceRecordSet(request: ValidateAcceptanceRecordSet
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+export function resolveAcceptanceCommitSha(records: AcceptanceRecord[]): AcceptanceCommitResolutionResult {
+  const commits = [...new Set(records.map((record) => record.commitSha).filter((commitSha) => commitSha.trim().length > 0))].sort();
+  if (commits.length !== 1) {
+    return {
+      ok: false,
+      errors: [`acceptance evidence must reference exactly one implementation commit; found ${commits.join(", ") || "none"}`],
+    };
+  }
+  const [commitSha] = commits as [string];
+  return { ok: true, commitSha, errors: [] };
 }
 
 function requireNonEmpty(errors: string[], value: string, field: string): void {

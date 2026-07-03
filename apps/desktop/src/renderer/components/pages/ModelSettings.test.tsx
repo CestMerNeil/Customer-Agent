@@ -61,7 +61,7 @@ const qualityProfile = {
 };
 
 function mockBridge() {
-  const invoke = vi.fn(async (channel: string) => {
+  const invoke = vi.fn<(channel: string, request?: unknown) => Promise<Record<string, unknown>>>(async (channel: string) => {
     if (channel === "inference.config.get") {
       return {
         config: {
@@ -113,6 +113,8 @@ function mockBridge() {
   return invoke;
 }
 
+type MockInvokeResult = Awaited<ReturnType<ReturnType<typeof mockBridge>>>;
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -121,7 +123,7 @@ afterEach(() => {
 describe("ModelSettings", () => {
   it("separates remote endpoint debugging from local llama runtime status", async () => {
     const invoke = mockBridge();
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.config.get") {
         return {
           config: {
@@ -197,7 +199,7 @@ describe("ModelSettings", () => {
 
   it("keeps the persisted local model profile selection", async () => {
     const invoke = mockBridge();
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.config.get") {
         return {
           config: {
@@ -263,7 +265,7 @@ describe("ModelSettings", () => {
 
   it("clears download progress after a model download failure", async () => {
     const invoke = mockBridge();
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.config.get") {
         return {
           config: {
@@ -337,7 +339,7 @@ describe("ModelSettings", () => {
       }
       return () => undefined;
     }) as CustomerAgentBridge["on"];
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.local.profiles") {
         return { profiles: [smallProfile] };
       }
@@ -382,7 +384,7 @@ describe("ModelSettings", () => {
     fireEvent.click(await screen.findByRole("button", { name: /下载模型/ }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.modelscope.download", expect.any(Object)));
-    const request = (invoke.mock.calls as unknown as Array<[string, any]>)
+    const request = (invoke.mock.calls as unknown as Array<[string, unknown]>)
       .find(([channel]) => channel === "inference.modelscope.download")?.[1] as { requestId: string };
     act(() => {
       progressHandler?.({
@@ -407,7 +409,7 @@ describe("ModelSettings", () => {
 
   it("does not mark llama-server ready when the runtime command is only configured", async () => {
     const invoke = mockBridge();
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.config.get") {
         return {
           config: {
@@ -485,7 +487,7 @@ describe("ModelSettings", () => {
 
   it("passes a progress request id when preparing local AI", async () => {
     const invoke = mockBridge();
-    invoke.mockImplementation(async (channel: string): Promise<any> => {
+    invoke.mockImplementation(async (channel: string): Promise<MockInvokeResult> => {
       if (channel === "inference.config.get") {
         return {
           config: {

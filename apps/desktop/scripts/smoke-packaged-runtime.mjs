@@ -1,4 +1,5 @@
 /* global console, process */
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 function fail(message) {
@@ -16,8 +17,11 @@ if (!resourcesPath) {
   fail("packaged runtime smoke requires RESOURCES_PATH to resolve the bundled browser location.");
 }
 
-const browsersPath = path.join(resourcesPath, "playwright-browsers");
-if (!path.isAbsolute(browsersPath)) {
+const resourcesRoot = path.isAbsolute(resourcesPath)
+  ? resourcesPath
+  : path.resolve(process.env.INIT_CWD ?? process.cwd(), resourcesPath);
+const browsersPath = path.join(resourcesRoot, "playwright-browsers");
+if (!existsSync(browsersPath)) {
   fail(`unable to resolve bundled Playwright browser path: ${browsersPath}`);
 }
 

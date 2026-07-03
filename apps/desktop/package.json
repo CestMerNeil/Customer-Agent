@@ -1,6 +1,6 @@
 {
   "name": "@customer-agent/desktop",
-  "version": "0.0.0",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "main": "dist/main/index.js",
@@ -88,7 +88,7 @@
     "afterSign": "scripts/notarize.mjs",
     "publish": {
       "provider": "generic",
-      "url": "https://updates.example.invalid/customer-agent/"
+      "url": "https://github.com/CestMerNeil/Customer-Agent/releases/latest/download/"
     }
   }
 }

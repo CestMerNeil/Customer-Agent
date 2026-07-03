@@ -1,8 +1,6 @@
 import type {
   GovernedKnowledgeRecord,
-  ProductSyncFailure,
   ProductSyncMode,
-  ProductSyncPhase,
   ProductSyncProgress
 } from "@customer-agent/core";
 import type { PddApi, PddProductDetail, PddProductListResult, PddProductSummary } from "./api.js";

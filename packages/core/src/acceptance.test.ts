@@ -3,6 +3,7 @@ import {
   buildDefaultAcceptanceSkeleton,
   createDefaultAcceptanceScopes,
   createReleaseCapabilityMatrix,
+  resolveAcceptanceCommitSha,
   validateAcceptanceRecord,
   validateAcceptanceRecordSet,
 } from "./acceptance.js";
@@ -96,5 +97,34 @@ describe("acceptance evidence", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("pdd-real-merchant-operations is missing passing evidence for pdd-account-a/shop-a");
+  });
+
+  it("resolves a single accepted implementation commit from release-scoped evidence", () => {
+    const records = buildDefaultAcceptanceSkeleton({
+      commitSha: "accepted-commit",
+      tag: "v1.0.3",
+      platform: "darwin-arm64",
+    }).map((record) => ({ ...record, outcome: "pass" as const, actor: "operator" as const, evidenceSummary: "Passed." }));
+
+    expect(resolveAcceptanceCommitSha(records)).toEqual({ ok: true, commitSha: "accepted-commit", errors: [] });
+  });
+
+  it("rejects release-scoped evidence that mixes accepted implementation commits", () => {
+    const records = buildDefaultAcceptanceSkeleton({
+      commitSha: "accepted-commit-a",
+      tag: "v1.0.3",
+      platform: "darwin-arm64",
+    }).map((record, index) => ({
+      ...record,
+      commitSha: index === 0 ? "accepted-commit-b" : record.commitSha,
+      outcome: "pass" as const,
+      actor: "operator" as const,
+      evidenceSummary: "Passed.",
+    }));
+
+    expect(resolveAcceptanceCommitSha(records)).toEqual({
+      ok: false,
+      errors: ["acceptance evidence must reference exactly one implementation commit; found accepted-commit-a, accepted-commit-b"],
+    });
   });
 });

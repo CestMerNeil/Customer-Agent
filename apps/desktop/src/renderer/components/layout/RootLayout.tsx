@@ -1,7 +1,7 @@
 import React from "react";
 import { Box } from "@mui/material";
-import { NavigationRail, NavItem, SIDEBAR_WIDTH } from "./NavigationRail";
-import { TopAppBar, TOOLBAR_HEIGHT } from "./TopAppBar";
+import { NavigationRail, NavItem } from "./NavigationRail";
+import { TopAppBar } from "./TopAppBar";
 
 interface RootLayoutProps {
   children: React.ReactNode;

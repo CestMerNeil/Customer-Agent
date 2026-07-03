@@ -46,6 +46,7 @@ export {
   buildDefaultAcceptanceSkeleton,
   createDefaultAcceptanceScopes,
   createReleaseCapabilityMatrix,
+  resolveAcceptanceCommitSha,
   validateAcceptanceRecord,
   validateAcceptanceRecordSet
 } from "./acceptance.js";
@@ -77,6 +78,7 @@ export type {
   AcceptanceActor,
   AcceptanceCapability,
   AcceptanceCapabilityMatrixRow,
+  AcceptanceCommitResolutionResult,
   AcceptanceOutcome,
   AcceptanceRecord,
   AcceptanceScopeAlias,

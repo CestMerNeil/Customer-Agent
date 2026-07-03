@@ -1,5 +1,8 @@
 /* global console, process */
 
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
+
 const PLACEHOLDER_UPDATE_URLS = new Set([
   "https://updates.example.invalid/customer-agent/",
   "https://updates.example.invalid/customer-agent",
@@ -19,13 +22,18 @@ function isNonProductionCi() {
 }
 
 function assertProductionUpdateUrl() {
-  const updateUrl = process.env.UPDATE_URL ?? process.env.ELECTRON_BUILDER_PUBLISH_URL ?? "";
+  const updateUrl = process.env.UPDATE_URL ?? process.env.ELECTRON_BUILDER_PUBLISH_URL ?? readConfiguredUpdateUrl();
   if (!updateUrl) {
     fail("missing production update URL configuration; set UPDATE_URL or ELECTRON_BUILDER_PUBLISH_URL.");
   }
   if (PLACEHOLDER_UPDATE_URLS.has(updateUrl)) {
     fail(`placeholder production update URL detected (${updateUrl}); replace it before packaging production artifacts.`);
   }
+}
+
+function readConfiguredUpdateUrl() {
+  const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  return packageJson.build?.publish?.url ?? "";
 }
 
 function assertMacSigningEnv() {
@@ -55,7 +63,7 @@ if (!nonProductionCi) {
   assertProductionUpdateUrl();
 }
 
-if (!nonProductionCi && platform === "darwin" && packagingMode === "production") {
+if (!nonProductionCi && platform === "darwin" && packagingMode === "signed") {
   assertMacSigningEnv();
 }
 

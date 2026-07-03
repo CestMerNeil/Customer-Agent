@@ -12,7 +12,6 @@ import type {
   IpcChannel,
   IpcRequest,
   IpcResponse,
-  InferenceConfig,
   InferenceRuntimeConfig,
   AppSettings,
   DependencyId,
