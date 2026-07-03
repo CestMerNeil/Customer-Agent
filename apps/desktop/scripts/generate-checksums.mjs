@@ -24,6 +24,13 @@ function fail(message) {
   throw new Error(`CHECKSUM_GENERATION_FAILED: ${message}`);
 }
 
+function isReleaseAsset(name) {
+  return (
+    /\.(dmg|exe|zip|blockmap)$/.test(name) ||
+    /^latest.*\.yml$/.test(name)
+  );
+}
+
 const platform = readArg("--platform");
 if (!platform) {
   fail("missing --platform.");
@@ -34,6 +41,7 @@ const entries = readdirSync(releaseDir, { withFileTypes: true })
   .filter((entry) => entry.isFile())
   .map((entry) => entry.name)
   .filter((name) => !/^checksums-.+\.txt$/.test(name))
+  .filter((name) => isReleaseAsset(name))
   .sort();
 
 if (entries.length === 0) {

@@ -33,12 +33,10 @@ jobs:
             os: macos-latest
             package-command: pnpm --filter @customer-agent/desktop package:mac:ci
             artifact-name: customer-agent-macos
-            artifact-path: apps/desktop/release/*
           - platform: win32-x64
             os: windows-latest
             package-command: pnpm --filter @customer-agent/desktop package:win:ci
             artifact-name: customer-agent-windows
-            artifact-path: apps/desktop/release/*
 
     steps:
       - name: Checkout
@@ -108,7 +106,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+            apps/desktop/release/checksums-*.txt
           if-no-files-found: error
           retention-days: 14
 
