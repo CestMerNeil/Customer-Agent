@@ -2,6 +2,8 @@
   "name": "@customer-agent/desktop",
   "version": "1.0.3",
   "private": true,
+  "description": "Electron desktop assistant for Pinduoduo customer-service operations.",
+  "author": "Customer Agent Contributors",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
@@ -53,7 +55,9 @@
   },
   "build": {
     "appId": "com.customeragent.desktop",
-    "productName": "Customer Agent",
+    "productName": "拼多多 AI 客服助手",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "icon": "build/icon",
     "directories": {
       "output": "release"
     },
@@ -72,6 +76,10 @@
       {
         "from": "build/app-update.yml",
         "to": "app-update.yml"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "mac": {

@@ -38,6 +38,9 @@ import { checkForAppUpdates, getAppUpdateStatus, installDownloadedAppUpdate, set
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
+const windowIconPath = app.isPackaged
+  ? path.join(process.resourcesPath, "icon.png")
+  : path.join(dirname, "../../build/icon.png");
 
 let storePromise: Promise<SqliteAppStore> | undefined;
 let pddService: PddService | undefined;
@@ -1928,6 +1931,7 @@ async function createWindow() {
     minHeight: 720,
     show: false,
     title: "拼多多 AI 客服助手",
+    icon: windowIconPath,
     // macOS: let the sidebar run edge-to-edge under inset traffic lights.
     titleBarStyle: "hiddenInset",
     webPreferences: {

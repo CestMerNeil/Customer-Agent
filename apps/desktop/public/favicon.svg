@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Customer Agent app icon</title>
+  <desc id="desc">A merchant customer-service headset, chat bubble, and automation nodes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="160" y1="112" x2="864" y2="912" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16345F"/>
+      <stop offset="0.52" stop-color="#15564F"/>
+      <stop offset="1" stop-color="#0E8A74"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="252" y1="230" x2="784" y2="764" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7DD3FC"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <filter id="shadow" x="112" y="96" width="800" height="840" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#021412" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#15564F"/>
+  <path d="M0 676C178 585 316 588 479 701c173 119 333 129 545-22v345H0V676Z" fill="#0B1726" opacity="0.26"/>
+  <path d="M232 714C174 635 154 532 181 434c42-152 183-258 340-258 174 0 322 127 349 299 18 115-22 228-105 304" fill="none" stroke="#DFFAF4" stroke-width="62" stroke-linecap="round" opacity="0.18"/>
+  <g filter="url(#shadow)">
+    <path d="M250 457c0-141 114-255 255-255s255 114 255 255" fill="none" stroke="url(#accent)" stroke-width="64" stroke-linecap="round"/>
+    <rect x="188" y="452" width="132" height="204" rx="58" fill="#DFFAF4"/>
+    <rect x="704" y="452" width="132" height="204" rx="58" fill="#DFFAF4"/>
+    <path d="M740 652c0 102-83 185-185 185h-62" fill="none" stroke="#DFFAF4" stroke-width="52" stroke-linecap="round"/>
+    <rect x="444" y="791" width="132" height="74" rx="37" fill="#34D399"/>
+    <path d="M332 360h340c55 0 100 45 100 100v130c0 55-45 100-100 100H481L361 779v-89h-29c-55 0-100-45-100-100V460c0-55 45-100 100-100Z" fill="#F8FFFC"/>
+    <circle cx="424" cy="526" r="34" fill="#123533"/>
+    <circle cx="512" cy="526" r="34" fill="#123533"/>
+    <circle cx="600" cy="526" r="34" fill="#123533"/>
+    <path d="M668 300l56-56 56 56-56 56-56-56Z" fill="#34D399"/>
+    <path d="M236 294l42-42 42 42-42 42-42-42Z" fill="#7DD3FC"/>
+    <path d="M772 744l42-42 42 42-42 42-42-42Z" fill="#7DD3FC"/>
+  </g>
+</svg>
