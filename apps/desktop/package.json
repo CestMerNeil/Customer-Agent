@@ -56,7 +56,7 @@
   "build": {
     "appId": "com.customeragent.desktop",
     "productName": "拼多多 AI 客服助手",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Customer-Agent-${version}-${os}-${arch}.${ext}",
     "icon": "build/icon",
     "directories": {
       "output": "release"
