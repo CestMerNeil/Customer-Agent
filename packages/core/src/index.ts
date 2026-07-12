@@ -51,6 +51,16 @@ export {
   validateAcceptanceRecordSet
 } from "./acceptance.js";
 export {
+  isEvidenceOnlyReleasePath,
+  validateReleaseIdentity,
+  validateReleasePublishTarget,
+} from "./release-identity.js";
+export type {
+  ReleaseIdentityInput,
+  ReleaseIdentityValidationResult,
+  ReleasePublishTargetInput,
+} from "./release-identity.js";
+export {
   buildDefaultPddCalibrationSkeleton,
   summarizePddCalibrationRecords,
   validatePddCalibrationRecord,
@@ -104,6 +114,8 @@ export type {
   AccountLoginResult,
   AppUpdateState,
   AppUpdateStatus,
+  DocumentKnowledgePreviewEntry,
+  DocumentKnowledgeProgressEvent,
   GenerateReplyRequest,
   GenerateReplyResult,
   IpcChannel,

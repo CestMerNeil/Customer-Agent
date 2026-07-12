@@ -3,17 +3,24 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   InputBase,
+  LinearProgress,
   MenuItem,
   Select,
   Stack,
   Typography,
 } from "@mui/material";
-import type { AccountRecord, GovernedKnowledgeRecord, ProductSyncMode, ProductSyncProgress } from "@customer-agent/core";
+import type { AccountRecord, DocumentKnowledgePreviewEntry, DocumentKnowledgeProgressEvent, GovernedKnowledgeRecord, ProductSyncMode, ProductSyncProgress } from "@customer-agent/core";
 import { useAsync } from "../useAsync";
 import { tokens } from "../../theme";
 import { EmptyState, Panel, Pill } from "../mistral";
 
+/** Renders governed product/customer-service knowledge and Model Provider-backed synchronization. */
 export const KnowledgeBaseManager: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
   const [productStatus, setProductStatus] = useState<string | null>(null);
@@ -40,6 +47,17 @@ export const KnowledgeBaseManager: React.FC = () => {
     });
   }, [selectedAccount?.shopId]);
   const [customerServiceRows, setCustomerServiceRows] = useState("");
+  const [documentProgress, setDocumentProgress] = useState<DocumentKnowledgeProgressEvent | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<{
+    fileName: string;
+    fileType: string;
+    segmentsTotal: number;
+    failures: Array<{ segment: number; error: string }>;
+    entries: Array<DocumentKnowledgePreviewEntry & { selected: boolean }>;
+  } | null>(null);
+  const [documentBusy, setDocumentBusy] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<GovernedKnowledgeRecord | null>(null);
+  const [deleteRecord, setDeleteRecord] = useState<GovernedKnowledgeRecord | null>(null);
 
   const productEntries = latestPerCitation(productKnowledge.data?.records ?? []);
   const customerServiceEntries = latestPerCitation(customerServiceKnowledge.data?.records ?? []);
@@ -74,19 +92,84 @@ export const KnowledgeBaseManager: React.FC = () => {
     if (picked.canceled || !picked.filePath) {
       return;
     }
-    setStatus(`正在用 AI 解析 ${picked.fileName} …`);
-    const result = await window.customerAgent.invoke("knowledge.document.import", {
-      shopId: selectedAccount.shopId,
-      filePath: picked.filePath,
+    const requestId = window.crypto.randomUUID();
+    setDocumentBusy(true);
+    setDocumentProgress({ requestId, fileName: picked.fileName ?? "文档", completed: 0, total: 0, entries: 0, failed: 0 });
+    setStatus(`正在读取并解析 ${picked.fileName} …`);
+    const unsubscribe = window.customerAgent.on("knowledge.document.progress", (progress) => {
+      if (progress.requestId === requestId) setDocumentProgress(progress);
     });
-    setStatus(
-      result.ok
-        ? `已解析 ${picked.fileName}：抽取 ${result.entries ?? 0} 条，新建 ${result.created}，跳过重复 ${result.skippedDuplicates}`
-        : result.error ?? "文档解析失败",
-    );
-    await customerServiceKnowledge.refresh();
+    try {
+      const result = await window.customerAgent.invoke("knowledge.document.import", {
+        shopId: selectedAccount.shopId,
+        filePath: picked.filePath,
+        requestId,
+      });
+      if (!result.ok) {
+        setStatus(result.error ?? "文档解析失败");
+        return;
+      }
+      setDocumentPreview({
+        fileName: result.fileName ?? picked.fileName ?? "文档",
+        fileType: result.fileType ?? "",
+        segmentsTotal: result.segmentsTotal,
+        failures: result.failures,
+        entries: result.entries.map((entry) => ({ ...entry, selected: true })),
+      });
+      setStatus(`解析完成：${result.segmentsCompleted}/${result.segmentsTotal} 个片段，提取 ${result.entries.length} 条，请预览后确认。`);
+    } finally {
+      unsubscribe();
+      setDocumentBusy(false);
+    }
   };
 
+  const confirmDocumentPreview = async () => {
+    if (!selectedAccount || !documentPreview) return;
+    const rows = documentPreview.entries.filter((entry) => entry.selected).map(({ selected: _selected, ...entry }) => entry);
+    if (rows.length === 0) {
+      setStatus("请至少选择一条知识后再确认。");
+      return;
+    }
+    setDocumentBusy(true);
+    try {
+      const response = await window.customerAgent.invoke("knowledge.customer_service.import", {
+        shopId: selectedAccount.shopId,
+        rows,
+        reviewState: "draft",
+        enabled: false,
+        sourceType: "llm_extraction",
+        sourceId: documentPreview.fileName,
+        sourceMetadata: {
+          fileName: documentPreview.fileName,
+          fileType: documentPreview.fileType,
+          segments: documentPreview.segmentsTotal,
+          ingestion: "segmented-model-provider",
+        },
+      });
+      setStatus(response.ok
+        ? `已保存 ${response.created} 条待审核知识，跳过重复 ${response.skippedDuplicates} 条。`
+        : response.error ?? "保存解析结果失败。");
+      if (response.ok) {
+        setDocumentPreview(null);
+        await customerServiceKnowledge.refresh();
+      }
+    } finally {
+      setDocumentBusy(false);
+    }
+  };
+
+  const deleteCustomerServiceKnowledge = async () => {
+    if (!deleteRecord) return;
+    const response = await window.customerAgent.invoke("knowledge.governed.delete", { citationId: deleteRecord.citationId });
+    setStatus(response.ok ? `已删除“${deleteRecord.title}”。` : response.error ?? "删除失败，请稍后重试。");
+    if (response.ok) {
+      setDeleteRecord(null);
+      if (detailRecord?.citationId === deleteRecord.citationId) setDetailRecord(null);
+      await customerServiceKnowledge.refresh();
+    }
+  };
+
+  /** Starts product synchronization through the selected Model Provider. */
   const startProductSync = async (mode: ProductSyncMode) => {
     if (!selectedAccount) {
       setProductStatus("请先登录一个拼多多账号。");
@@ -97,7 +180,7 @@ export const KnowledgeBaseManager: React.FC = () => {
       mode,
     });
     if (!response.ok || !response.run) {
-      setProductStatus("商品同步启动失败，请稍后重试。");
+      setProductStatus(response.error ?? "商品同步启动失败，请稍后重试。");
       return;
     }
     setSyncProgress(response.run);
@@ -181,7 +264,7 @@ export const KnowledgeBaseManager: React.FC = () => {
               displayEmpty
               value={selectedAccount?.id ?? ""}
               onChange={(event) => setSelectedAccountId(event.target.value)}
-              sx={{ height: 34, borderRadius: "9px", fontSize: 12, fontWeight: 600, color: "#525252", minWidth: 150 }}
+              sx={{ height: 34, borderRadius: "9px", fontSize: 12, fontWeight: 600, color: tokens.color.text.secondary, minWidth: 150 }}
             >
               {(accounts.data?.accounts ?? []).map((account: AccountRecord) => (
                 <MenuItem key={account.id} value={account.id}>
@@ -205,13 +288,13 @@ export const KnowledgeBaseManager: React.FC = () => {
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mb: 1 }}>
           <Pill label={syncPill.label} tone={syncPill.tone} />
-          <Typography sx={{ fontSize: 12, fontWeight: 500, color: "#525252" }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>
             {syncProgress
               ? `${syncProgress.current}/${syncProgress.total} · 新增 ${syncProgress.added} · 更新 ${syncProgress.updated} · 跳过 ${syncProgress.skipped} · 失败 ${syncProgress.failed}`
               : "尚未同步"}
           </Typography>
         </Box>
-        <Box sx={{ height: 5, borderRadius: "3px", bgcolor: "#f0f0f0", overflow: "hidden" }}>
+        <Box sx={{ height: 5, borderRadius: "3px", bgcolor: tokens.color.control.fill, overflow: "hidden" }}>
           <Box sx={{ width: `${syncPct}%`, height: "100%", bgcolor: tokens.color.state.success, transition: "width .4s" }} />
         </Box>
         {syncProgress?.currentGoodsName && (
@@ -221,7 +304,7 @@ export const KnowledgeBaseManager: React.FC = () => {
         )}
         {syncProgress?.failures[0] && (
           <Alert severity="warning" sx={{ mt: 1 }}>
-            有商品同步失败，请稍后重试或检查账号/模型状态。
+            {syncProgress.failures[0].error}
           </Alert>
         )}
         {productStatus && <Alert severity={productStatus.includes("失败") ? "error" : "info"} sx={{ mt: 2 }}>{productStatus}</Alert>}
@@ -293,13 +376,26 @@ export const KnowledgeBaseManager: React.FC = () => {
             <Button
               variant="outlined"
               onClick={uploadDocument}
-              disabled={!selectedAccount}
+              disabled={!selectedAccount || documentBusy}
               startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>upload_file</span>}
               sx={{ height: 32, minHeight: 32, px: "14px", fontSize: 12, fontWeight: 600, borderRadius: "8px" }}
             >
               解析文档
             </Button>
           </Stack>
+          {documentBusy && (
+            <Box sx={{ mb: 1.5 }}>
+              <LinearProgress
+                variant={documentProgress?.total ? "determinate" : "indeterminate"}
+                value={documentProgress?.total ? (documentProgress.completed / documentProgress.total) * 100 : undefined}
+              />
+              <Typography sx={{ mt: 0.75, fontSize: 11, color: tokens.color.text.secondary }}>
+                {documentProgress?.total
+                  ? `正在解析 ${documentProgress.completed}/${documentProgress.total} 个片段 · 已提取 ${documentProgress.entries} 条`
+                  : "正在读取文档…"}
+              </Typography>
+            </Box>
+          )}
           {status && (
             <Typography sx={{ mb: 1.5 }} variant="body2" color={status.includes("失败") ? "error.main" : "success.main"}>
               {status}
@@ -310,33 +406,123 @@ export const KnowledgeBaseManager: React.FC = () => {
           ) : (
             <Box sx={{ maxHeight: 420, overflowY: "auto" }}>
               {customerServiceEntries.map((record, index) => (
-                <Box
-                  key={record.citationId}
-                  onClick={() =>
-                    void setKnowledgeState(
-                      record,
-                      record.enabled ? { enabled: false } : { reviewState: "reviewed", enabled: true },
-                    )
-                  }
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    py: "11px",
-                    borderBottom: index === customerServiceEntries.length - 1 ? "none" : "1px solid #f0f0f0",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Typography noWrap sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>
-                    {record.title}
-                  </Typography>
-                  <Pill label={record.enabled ? "已启用" : "未启用"} tone={record.enabled ? "success" : "neutral"} />
+                <Box key={record.citationId} sx={{ py: "13px", borderBottom: index === customerServiceEntries.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}` }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 700, flex: 1, minWidth: 180 }}>{record.title}</Typography>
+                    <Pill label={reviewPill(record).label} tone={reviewPill(record).tone} />
+                    <Pill label={record.enabled && record.reviewState === "reviewed" ? "Agent 可用" : "Agent 不可用"} tone={record.enabled && record.reviewState === "reviewed" ? "success" : "neutral"} />
+                  </Box>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.25, flexWrap: "wrap", rowGap: 1 }}>
+                    <Button variant="outlined" onClick={() => setDetailRecord(record)} sx={{ fontSize: 12 }}>查看详情</Button>
+                    {!(record.enabled && record.reviewState === "reviewed") && <Button variant="contained" onClick={() => void setKnowledgeState(record, { reviewState: "reviewed", enabled: true })} sx={{ fontSize: 12 }}>审核并启用</Button>}
+                    {record.enabled && <Button variant="outlined" onClick={() => void setKnowledgeState(record, { enabled: false })} sx={{ fontSize: 12 }}>禁用</Button>}
+                    <Button color="error" variant="outlined" onClick={() => setDeleteRecord(record)} sx={{ fontSize: 12 }}>删除</Button>
+                  </Stack>
                 </Box>
               ))}
             </Box>
           )}
         </Panel>
       </Box>
+
+      <Dialog open={Boolean(documentPreview)} onClose={() => !documentBusy && setDocumentPreview(null)} fullWidth maxWidth="md">
+        <DialogTitle>AI 文档解析结果</DialogTitle>
+        <DialogContent dividers>
+          {documentPreview && (
+            <>
+              <Typography sx={{ fontSize: 12, color: tokens.color.text.secondary, mb: 1.5 }}>
+                {documentPreview.fileName} · {documentPreview.segmentsTotal} 个片段 · {documentPreview.entries.length} 条结果
+              </Typography>
+              {documentPreview.failures.length > 0 && (
+                <Alert severity="warning" sx={{ mb: 1.5 }}>
+                  {documentPreview.failures.length} 个片段未返回有效条目，请检查预览内容是否完整。
+                </Alert>
+              )}
+              <Stack spacing={1.25}>
+                {documentPreview.entries.map((entry, index) => (
+                  <Box key={`${entry.title}-${index}`} sx={{ display: "flex", gap: 1, border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "10px", p: 1.25 }}>
+                    <Checkbox
+                      checked={entry.selected}
+                      onChange={(event) => setDocumentPreview((current) => current ? {
+                        ...current,
+                        entries: current.entries.map((item, itemIndex) => itemIndex === index ? { ...item, selected: event.target.checked } : item),
+                      } : current)}
+                      slotProps={{ input: { "aria-label": `选择 ${entry.title}` } }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{entry.title}</Typography>
+                      <Typography sx={{ mt: 0.5, fontSize: 12, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{entry.content}</Typography>
+                      <Typography sx={{ mt: 0.5, fontSize: 10, color: tokens.color.text.tertiary }}>{entry.tags.length ? entry.tags.join(" · ") : "无标签"}</Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Stack>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDocumentPreview(null)} disabled={documentBusy}>取消</Button>
+          <Button variant="contained" onClick={() => void confirmDocumentPreview()} disabled={documentBusy || !documentPreview?.entries.some((entry) => entry.selected)}>
+            保存所选知识
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(detailRecord)} onClose={() => setDetailRecord(null)} fullWidth maxWidth="sm">
+        <DialogTitle>知识详情</DialogTitle>
+        <DialogContent dividers>
+          {detailRecord && (
+            <Stack spacing={2}>
+              <Box>
+                <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>标题</Typography>
+                <Typography sx={{ mt: 0.5, fontSize: 18, fontWeight: 750 }}>{detailRecord.title}</Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>知识内容</Typography>
+                <Typography sx={{ mt: 0.75, fontSize: 14, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{detailRecord.content}</Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>标签</Typography>
+                <Typography sx={{ mt: 0.5, fontSize: 14 }}>{detailRecord.tags.length ? detailRecord.tags.join(" · ") : "无标签"}</Typography>
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+                <Box>
+                  <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>审核状态</Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 14 }}>{reviewPill(detailRecord).label}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>Agent 状态</Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 14 }}>{detailRecord.enabled && detailRecord.reviewState === "reviewed" ? "可用" : "不可用"}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>来源</Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 14 }}>{detailRecord.sourceId ?? detailRecord.sourceType}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 12, color: tokens.color.text.tertiary }}>版本</Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 14 }}>v{detailRecord.version}</Typography>
+                </Box>
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDetailRecord(null)}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteRecord)} onClose={() => setDeleteRecord(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>删除知识</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, lineHeight: 1.7 }}>
+            确定删除“{deleteRecord?.title}”吗？该知识的全部版本都会被删除，此操作无法撤销。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteRecord(null)}>取消</Button>
+          <Button color="error" variant="contained" onClick={() => void deleteCustomerServiceKnowledge()}>确认删除</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
@@ -389,10 +575,10 @@ const ProductKnowledgeCard: React.FC<{
             onClick={onReject}
             sx={{
               ...cardButton,
-              borderColor: "#f0d9a8",
-              bgcolor: "#fffbf2",
+              borderColor: tokens.color.state.warning,
+              bgcolor: tokens.color.state.warningSoft,
               color: tokens.color.state.warning,
-              "&:hover": { borderColor: "#f0d9a8", bgcolor: "#fdf3dd" },
+              "&:hover": { borderColor: tokens.color.state.warning, bgcolor: tokens.color.state.warningSoft },
             }}
           >
             拒绝

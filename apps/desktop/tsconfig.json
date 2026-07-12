@@ -9,7 +9,6 @@
       "@customer-agent/core": ["packages/core/dist/index.d.ts"],
       "@customer-agent/db": ["packages/db/dist/index.d.ts"],
       "@customer-agent/inference": ["packages/inference/dist/index.d.ts"],
-      "@customer-agent/knowledge": ["packages/knowledge/dist/index.d.ts"],
       "@customer-agent/pdd": ["packages/pdd/dist/index.d.ts"]
     },
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]

@@ -9,6 +9,7 @@ import type {
   GovernedKnowledgeKind,
   GovernedKnowledgeRecord,
   GovernedKnowledgeReviewState,
+  GovernedKnowledgeSourceType,
   InboundQueueMetrics,
   InboundQueueRecord,
   LogLevel,
@@ -35,7 +36,7 @@ const DEFAULT_HANDOFF_KEYWORDS = [
   "开票",
   "备注",
 ];
-import { SecretBox } from "./secret-box.js";
+import { SecretBox, type SecretBoxOptions } from "./secret-box.js";
 
 type NewAccount = Omit<AccountRecord, "id" | "createdAt" | "updatedAt"> & { id?: string };
 type NewMessage = Omit<MessageRecord, "updatedAt">;
@@ -73,12 +74,13 @@ export class SqliteAppStore {
     private readonly secrets: SecretBox,
   ) {}
 
-  static async open(dataDir: string): Promise<SqliteAppStore> {
+  /** Opens the persisted store with the supplied secret-key protection policy. */
+  static async open(dataDir: string, secretBoxOptions: SecretBoxOptions = {}): Promise<SqliteAppStore> {
     await mkdir(dataDir, { recursive: true });
     const SQL = await initSqlJs();
     const dbPath = path.join(dataDir, "customer-agent.sqlite");
     const db = await openDatabase(SQL, dbPath);
-    const store = new SqliteAppStore(dbPath, db, await SecretBox.open(dataDir));
+    const store = new SqliteAppStore(dbPath, db, await SecretBox.open(dataDir, secretBoxOptions));
     store.migrate();
     await store.persist();
     return store;
@@ -657,6 +659,10 @@ export class SqliteAppStore {
     shopId: string;
     rows: Array<{ title: string; content: string; tags?: string[] }>;
     reviewState?: GovernedKnowledgeReviewState;
+    enabled?: boolean;
+    sourceType?: GovernedKnowledgeSourceType;
+    sourceId?: string;
+    sourceMetadata?: Record<string, unknown>;
   }): Promise<{ created: number; skippedDuplicates: number; failed: number }> {
     let created = 0;
     let skippedDuplicates = 0;
@@ -688,8 +694,10 @@ export class SqliteAppStore {
         title,
         content,
         tags: row.tags ?? [],
-        sourceType: "import",
-        enabled: true,
+        sourceType: input.sourceType ?? "import",
+        ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+        ...(input.sourceMetadata ? { sourceMetadata: input.sourceMetadata } : {}),
+        enabled: input.enabled ?? true,
         reviewState: input.reviewState ?? "draft",
       });
       created += 1;

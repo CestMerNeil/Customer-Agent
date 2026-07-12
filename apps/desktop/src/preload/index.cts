@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppUpdateStatus, IpcChannel, IpcRequest, IpcResponse, ModelDownloadProgressEvent, ProductSyncProgress } from "@customer-agent/core";
+import type { AppUpdateStatus, DocumentKnowledgeProgressEvent, IpcChannel, IpcRequest, IpcResponse, ModelDownloadProgressEvent, ProductSyncProgress } from "@customer-agent/core";
 
 type RendererEventMap = {
   "inference.modelscope.download.progress": ModelDownloadProgressEvent;
   "product.sync.progress": ProductSyncProgress;
+  "knowledge.document.progress": DocumentKnowledgeProgressEvent;
   "app.update.status": AppUpdateStatus;
 };
 

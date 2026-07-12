@@ -9,27 +9,38 @@ describe("ResponsesAgentWorkflow", () => {
         responseId: "resp-1",
         toolCalls: [{
           callId: "call-1",
-          name: "search_customer_service_knowledge",
-          arguments: { query: "退货" },
+          name: "list_customer_service_knowledge",
+          arguments: { page: 1 },
         }],
       })
       .mockResolvedValueOnce({
         responseId: "resp-2",
+        toolCalls: [{
+          callId: "call-2",
+          name: "get_customer_service_knowledge",
+          arguments: { citation_ids: ["customer_service:shop-1:return"] },
+        }],
+      })
+      .mockResolvedValueOnce({
+        responseId: "resp-3",
         outputText: "您好，签收七天内可以申请退货。",
         toolCalls: [],
       });
-    const execute = vi.fn(async () => ({
+    const listExecute = vi.fn(async () => ({
+      ok: true,
+      content: "citation_id=customer_service:shop-1:return | title=退货政策 | tags=退货 | version=v1",
+    }));
+    const getExecute = vi.fn(async () => ({
       ok: true,
       content: "退货政策：签收七天内可申请退货。",
       citations: [{ scope: "shop" as const, documentId: "customer_service:shop-1:return", chunkId: "v1", score: 1 }],
     }));
     const workflow = new ResponsesAgentWorkflow({
       invokeModel,
-      tools: [{
-        name: "search_customer_service_knowledge",
-        description: "搜索客服知识",
-        execute,
-      }],
+      tools: [
+        { name: "list_customer_service_knowledge", description: "列出客服知识目录", execute: listExecute },
+        { name: "get_customer_service_knowledge", description: "获取客服知识全文", execute: getExecute },
+      ],
     });
 
     await expect(workflow.generate({
@@ -50,12 +61,13 @@ describe("ResponsesAgentWorkflow", () => {
       sources: [{ documentId: "customer_service:shop-1:return", chunkId: "v1" }],
     });
 
-    expect(execute).toHaveBeenCalledWith({ query: "退货" });
+    expect(listExecute).toHaveBeenCalledWith({ page: 1 });
+    expect(getExecute).toHaveBeenCalledWith({ citation_ids: ["customer_service:shop-1:return"] });
     expect(invokeModel.mock.calls[0]?.[0]).toMatchObject({
-      tools: [expect.objectContaining({
-        type: "function",
-        name: "search_customer_service_knowledge",
-      })],
+      tools: expect.arrayContaining([
+        expect.objectContaining({ type: "function", name: "list_customer_service_knowledge" }),
+        expect.objectContaining({ type: "function", name: "get_customer_service_knowledge" }),
+      ]),
     });
     expect(invokeModel.mock.calls[1]?.[0]).toMatchObject({
       previousResponseId: "resp-1",
@@ -63,6 +75,10 @@ describe("ResponsesAgentWorkflow", () => {
         type: "function_call_output",
         call_id: "call-1",
       })],
+    });
+    expect(invokeModel.mock.calls[2]?.[0]).toMatchObject({
+      previousResponseId: "resp-2",
+      input: [expect.objectContaining({ type: "function_call_output", call_id: "call-2" })],
     });
   });
 

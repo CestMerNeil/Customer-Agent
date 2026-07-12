@@ -48,6 +48,9 @@ export interface ResponseModelResult {
 
 type FetchLike = typeof fetch;
 
+// 探活只需确认端点能应答，不通的地址不应拖到操作系统 TCP 超时（约 75 秒）。
+const HEALTH_CHECK_TIMEOUT_MS = 8_000;
+
 export class OpenAICompatibleClient {
   private readonly responseConversations = new Map<string, ChatMessage[]>();
 
@@ -57,21 +60,45 @@ export class OpenAICompatibleClient {
   ) {}
 
   async healthCheck(): Promise<void> {
+    this.assertConfigured();
+    try {
+      await this.chat("请回复 OK", { signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS) });
+    } catch (error) {
+      throw mapTimeout(error);
+    }
+  }
+
+  /** Cheap reachability/auth probe (GET /models) for polling; unlike healthCheck it
+   * does not run a real completion, so it returns in milliseconds and costs nothing. */
+  async quickCheck(): Promise<void> {
+    this.assertConfigured();
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}/models`, {
+        headers: this.headers,
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      });
+      await assertOk(response);
+    } catch (error) {
+      throw mapTimeout(error);
+    }
+  }
+
+  private assertConfigured(): void {
     if (!this.config.baseUrl.trim()) {
       throw new Error("OpenAI compatible endpoint 未配置 baseUrl");
     }
     if (!this.config.chatModel.trim()) {
       throw new Error("OpenAI compatible endpoint 未配置 chatModel");
     }
-    await this.chat("请回复 OK");
   }
 
-  async chat(prompt: string): Promise<string> {
+  async chat(prompt: string, options?: { signal?: AbortSignal }): Promise<string> {
     return this.completeChat({
       messages: [
         { role: "system", content: "你是电商客服助手，只能基于给定资料礼貌回答。" },
         { role: "user", content: prompt },
       ],
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
   }
 
@@ -135,6 +162,7 @@ export class OpenAICompatibleClient {
   private async completeChat(request: {
     messages: ChatMessage[];
     responseFormat?: "json_object";
+    signal?: AbortSignal;
   }): Promise<string> {
     const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
       method: "POST",
@@ -147,6 +175,7 @@ export class OpenAICompatibleClient {
         stream: false,
         ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}),
       }),
+      ...(request.signal ? { signal: request.signal } : {}),
     });
     await assertOk(response);
     const data = (await response.json()) as ChatCompletionResponse;
@@ -181,6 +210,13 @@ export class OpenAICompatibleClient {
       { role: "user", content: typeof request.input === "string" ? request.input : JSON.stringify(request.input) },
     ];
   }
+}
+
+function mapTimeout(error: unknown): unknown {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return new Error(`连接超时（${HEALTH_CHECK_TIMEOUT_MS / 1000} 秒内无响应），请检查服务地址与网络。`);
+  }
+  return error;
 }
 
 async function assertOk(response: Response): Promise<void> {

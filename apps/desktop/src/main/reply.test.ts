@@ -347,15 +347,16 @@ describe("generateAndPersistReply", () => {
             audits.push(audit);
             return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
           },
-          listGovernedKnowledge: async () => [
-            governedKnowledge({
+          listGovernedKnowledge: async (options) => {
+            expect(options).toMatchObject({ kind: "customer_service", shopId: "shop-a", eligibleOnly: true });
+            return [governedKnowledge({
               kind: "customer_service",
               citationId: "customer_service:shop-a:return",
               title: "退货政策",
               content: "围巾支持签收七天内退货。",
               tags: ["退货"],
-            }),
-          ],
+            })];
+          },
         },
         createInferenceClient: async () => ({
           chat,
@@ -366,13 +367,23 @@ describe("generateAndPersistReply", () => {
                 responseId: "resp-1",
                 toolCalls: [{
                   callId: "call-1",
-                  name: "search_customer_service_knowledge",
-                  arguments: { query: "围巾退货" },
+                  name: "list_customer_service_knowledge",
+                  arguments: { page: 1 },
+                }],
+              };
+            }
+            if (responseRequests.length === 2) {
+              return {
+                responseId: "resp-2",
+                toolCalls: [{
+                  callId: "call-2",
+                  name: "get_customer_service_knowledge",
+                  arguments: { citation_ids: ["customer_service:shop-a:return"] },
                 }],
               };
             }
             return {
-              responseId: "resp-2",
+              responseId: "resp-3",
               outputText: "您好，围巾支持签收七天内退货。",
               toolCalls: [],
             };
@@ -386,17 +397,65 @@ describe("generateAndPersistReply", () => {
     expect(chat).not.toHaveBeenCalled();
     expect(responseRequests[0]).toMatchObject({
       tools: expect.arrayContaining([
-        expect.objectContaining({ type: "function", name: "search_customer_service_knowledge" }),
+        expect.objectContaining({ type: "function", name: "list_customer_service_knowledge" }),
+        expect.objectContaining({ type: "function", name: "get_customer_service_knowledge" }),
       ]),
     });
     expect(responseRequests[1]).toMatchObject({
       previousResponseId: "resp-1",
       input: [expect.objectContaining({ type: "function_call_output", call_id: "call-1" })],
     });
+    expect(JSON.stringify(responseRequests[1])).toContain("citation_id=customer_service:shop-a:return");
+    expect(JSON.stringify(responseRequests[1])).not.toContain("围巾支持签收七天内退货");
+    expect(JSON.stringify(responseRequests[2])).toContain("围巾支持签收七天内退货");
     expect(audits).toEqual(expect.arrayContaining([
-      expect.objectContaining({ eventType: "tool_call", toolName: "search_customer_service_knowledge" }),
-      expect.objectContaining({ eventType: "tool_result", toolName: "search_customer_service_knowledge", ok: true }),
+      expect.objectContaining({ eventType: "tool_call", toolName: "list_customer_service_knowledge" }),
+      expect.objectContaining({ eventType: "tool_result", toolName: "list_customer_service_knowledge", ok: true }),
+      expect.objectContaining({ eventType: "tool_call", toolName: "get_customer_service_knowledge" }),
+      expect.objectContaining({ eventType: "tool_result", toolName: "get_customer_service_knowledge", ok: true }),
       expect.objectContaining({ eventType: "final" }),
+    ]));
+  });
+
+  it("rejects AI-selected customer knowledge ids outside the eligible current-shop catalog", async () => {
+    const audits: unknown[] = [];
+    const result = await generateAndPersistReply(
+      {
+        mode: "automatic",
+        context: {
+          id: "message-1", channel: "pinduoduo", type: "text", content: "能退货吗？",
+          shopId: "shop-a", accountId: "account-a", buyerId: "buyer-a",
+          receivedAt: "2026-06-24T00:00:00.000Z", raw: {},
+        },
+      },
+      {
+        store: {
+          getSettings: async () => ({ businessHours: { start: "08:00", end: "23:00" }, knowledge: { topK: 4 } }),
+          saveDraft: async (draft) => draft,
+          appendLog: vi.fn(),
+          listGovernedKnowledge: async () => [governedKnowledge({
+            kind: "customer_service",
+            citationId: "customer_service:shop-a:return",
+            title: "退货政策",
+            content: "七天内可退货。",
+          })],
+          getConversationMemory: async () => undefined,
+          saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
+          appendAgentAudit: async (audit) => {
+            audits.push(audit);
+            return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
+          },
+        },
+        createInferenceClient: async () => nativeAgentClient([
+          { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "get_customer_service_knowledge", arguments: { citation_ids: ["customer_service:shop-b:return"] } }] },
+          { responseId: "resp-2", outputText: "抱歉，当前知识不足，请联系人工客服。", toolCalls: [] },
+        ]),
+      },
+    );
+
+    expect(result).toMatchObject({ ok: true, reply: { sources: [] } });
+    expect(audits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "tool_result", toolName: "get_customer_service_knowledge", ok: false }),
     ]));
   });
 

@@ -28,4 +28,11 @@ describe("redaction", () => {
     expect(containsSensitiveText("plain sanitized evidence")).toBe(false);
     expect(containsSensitiveText("raw buyer payload recorded")).toBe(true);
   });
+
+  it("does not flag GitHub expressions or shell references as leaked secrets", () => {
+    const workflow = "GH_TOKEN: ${{ github.token }}\nAuthorization: Bearer $GH_TOKEN";
+
+    expect(containsSensitiveText(workflow)).toBe(false);
+    expect(containsSensitiveText("Authorization: Bearer ghp_real_secret")).toBe(true);
+  });
 });

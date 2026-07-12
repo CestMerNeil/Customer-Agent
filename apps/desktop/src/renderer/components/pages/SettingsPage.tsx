@@ -101,7 +101,7 @@ export const SettingsPage: React.FC = () => {
                 width: 130,
                 height: 38,
                 px: "12px",
-                border: "1px solid #e0e0e0",
+                border: `1px solid ${tokens.color.border.strong}`,
                 borderRadius: "9px",
                 fontFamily: tokens.font.display,
                 fontSize: 14,
@@ -138,10 +138,10 @@ export const SettingsPage: React.FC = () => {
               alignItems: "center",
               gap: "14px",
               p: "10px 14px",
-              borderBottom: index === recentLogs.length - 1 ? "none" : "1px solid #f4f4f4",
+              borderBottom: index === recentLogs.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
             }}
           >
-            <Typography sx={{ fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2", width: 110, flex: "none" }}>
+            <Typography sx={{ fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, width: 110, flex: "none" }}>
               {formatLogTime(log.createdAt)}
             </Typography>
             <Typography
@@ -161,7 +161,7 @@ export const SettingsPage: React.FC = () => {
             >
               {log.level === "warning" ? "WARN" : log.level.toUpperCase()}
             </Typography>
-            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: "#525252" }}>
+            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>
               {sanitizeDiagnosticText(log.message)}
             </Typography>
           </Box>
@@ -202,8 +202,8 @@ export const SettingsPage: React.FC = () => {
           mb: "26px",
         }}
       >
-        <Box sx={{ width: 38, height: 38, flex: "none", borderRadius: "10px", bgcolor: "#f4f4f4", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 21, color: "#525252" }}>verified</span>
+        <Box sx={{ width: 38, height: 38, flex: "none", borderRadius: "10px", bgcolor: tokens.color.control.fill, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 21, color: tokens.color.text.secondary }}>verified</span>
         </Box>
         <Box sx={{ flex: 1 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 700 }}>

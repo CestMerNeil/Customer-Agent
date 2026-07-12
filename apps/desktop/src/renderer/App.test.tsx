@@ -128,12 +128,18 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Responses API 不可用")).toBeInTheDocument();
+    expect(await screen.findByText("云端 AI 未连接")).toBeInTheDocument();
 
     window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
       detail: { ok: true },
     }));
 
-    expect(await screen.findByText("Responses API 可用")).toBeInTheDocument();
+    expect(await screen.findByText("云端 AI 已连接")).toBeInTheDocument();
+
+    window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
+      detail: { modelProvider: "local", ok: null },
+    }));
+
+    expect(await screen.findByText("正在检查本地 AI…")).toBeInTheDocument();
   });
 });

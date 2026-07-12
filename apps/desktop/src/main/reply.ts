@@ -348,17 +348,45 @@ function createCustomerAgentTools(
       },
     },
     {
-      name: "search_customer_service_knowledge",
-      description: "搜索当前店铺已审核客服知识。输入：query。",
+      name: "list_customer_service_knowledge",
+      description: "列出当前店铺已审核且可用的客服知识目录。只返回 ID、标题、标签和版本，供你自行判断相关性；输入可包含 page。",
       execute: async (input) => {
-        const query = stringInput(input.query) ?? context.content;
         const records = await deps.store.listGovernedKnowledge({ kind: "customer_service", shopId: context.shopId, eligibleOnly: true });
-        const results = searchEligibleGovernedKnowledge(records, query, topK);
+        const pageSize = 50;
+        const page = positiveInt(input.page) ?? 1;
+        const ordered = records.slice().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.citationId.localeCompare(right.citationId));
+        const pageRecords = ordered.slice((page - 1) * pageSize, page * pageSize);
+        const totalPages = Math.max(1, Math.ceil(ordered.length / pageSize));
         return {
-          ok: results.length > 0,
-          content: results.length ? results.map((result) => result.content).join("\n\n") : "未找到可用客服知识。",
-          citations: results.map(toCitation),
-          ...(results.length ? {} : { error: "customer_service_knowledge_not_found" }),
+          ok: true,
+          content: pageRecords.length
+            ? [
+              `客服知识目录：第 ${page}/${totalPages} 页，共 ${ordered.length} 条。`,
+              ...pageRecords.map((record) => `- citation_id=${record.citationId} | title=${record.title} | tags=${record.tags.join("、") || "无"} | version=v${record.version}`),
+              page < totalPages ? `还有下一页，请调用 page=${page + 1}。` : "已到最后一页。",
+            ].join("\n")
+            : "当前页没有可用客服知识。",
+        };
+      },
+    },
+    {
+      name: "get_customer_service_knowledge",
+      description: "按你从目录中选择的精确 citation_ids 获取当前店铺客服知识全文。只有调用此工具取得全文后，才能据此回答。",
+      execute: async (input) => {
+        const citationIds = stringArrayInput(input.citation_ids ?? input.citationIds).slice(0, 10);
+        if (citationIds.length === 0) {
+          return { ok: false, content: "", error: "缺少 citation_ids" };
+        }
+        const records = await deps.store.listGovernedKnowledge({ kind: "customer_service", shopId: context.shopId, eligibleOnly: true });
+        const byId = new Map(records.map((record) => [record.citationId, record]));
+        const selected = citationIds.map((id) => byId.get(id)).filter((record): record is GovernedKnowledgeRecord => Boolean(record));
+        return {
+          ok: selected.length > 0,
+          content: selected.length
+            ? selected.map((record) => `客服知识: ${record.citationId} (v${record.version})\n标题: ${record.title}\n${record.content}`).join("\n\n")
+            : "未找到当前店铺可用的对应客服知识。",
+          citations: selected.map(toGovernedKnowledgeCitation),
+          ...(selected.length ? {} : { error: "customer_service_knowledge_not_found_or_ineligible" }),
         };
       },
     },
@@ -447,6 +475,24 @@ function toCitation(result: KnowledgeSearchResult): KnowledgeSourceReference {
 
 function stringInput(value: unknown): string | undefined {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() || undefined : undefined;
+}
+
+function positiveInt(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function stringArrayInput(value: unknown): string[] {
+  return Array.isArray(value) ? Array.from(new Set(value.map(stringInput).filter((item): item is string => Boolean(item)))) : [];
+}
+
+function toGovernedKnowledgeCitation(record: GovernedKnowledgeRecord): KnowledgeSourceReference {
+  return {
+    scope: "shop",
+    documentId: record.citationId,
+    chunkId: `v${record.version}`,
+    score: 1,
+  };
 }
 
 function isAiEligibleMessageType(type: MessageRecord["type"]): boolean {

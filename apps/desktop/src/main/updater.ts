@@ -1,20 +1,29 @@
 import { app, BrowserWindow } from "electron";
-import { autoUpdater } from "electron-updater";
+import { createRequire } from "node:module";
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from "electron-updater";
 import type { AppUpdateStatus } from "@customer-agent/core";
 
+/** Loads CommonJS-only runtime packages from the ESM main process. */
+const require = createRequire(import.meta.url);
+/** Electron updater instance loaded through its CommonJS entry point. */
+const { autoUpdater } = require("electron-updater") as typeof import("electron-updater");
+
+/** Current updater state exposed to renderer clients. */
 let updateStatus: AppUpdateStatus = {
   state: app.isPackaged ? "idle" : "disabled",
   version: app.getVersion(),
   enabled: app.isPackaged,
 };
 
+/** Tracks whether updater event handlers have already been registered. */
 let updaterConfigured = false;
 
+/** Returns a copy of the current application update state. */
 export function getAppUpdateStatus(): AppUpdateStatus {
   return { ...updateStatus };
 }
 
+/** Configures updater behavior and event forwarding once per application process. */
 export function setupAppUpdater(): void {
   if (updaterConfigured) {
     return;
@@ -86,6 +95,7 @@ export function setupAppUpdater(): void {
   });
 }
 
+/** Checks the configured update provider and returns the resulting updater state. */
 export async function checkForAppUpdates(): Promise<AppUpdateStatus> {
   if (!app.isPackaged) {
     setUpdateStatus({
@@ -112,6 +122,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateStatus> {
   return getAppUpdateStatus();
 }
 
+/** Installs a downloaded update when one is ready. */
 export function installDownloadedAppUpdate(): { ok: boolean; error?: string } {
   if (updateStatus.state !== "downloaded") {
     return { ok: false, error: "还没有下载完成的新版本。" };
@@ -120,6 +131,7 @@ export function installDownloadedAppUpdate(): { ok: boolean; error?: string } {
   return { ok: true };
 }
 
+/** Stores an updater state and broadcasts it to every application window. */
 function setUpdateStatus(status: AppUpdateStatus): void {
   updateStatus = status;
   for (const window of BrowserWindow.getAllWindows()) {
@@ -127,6 +139,7 @@ function setUpdateStatus(status: AppUpdateStatus): void {
   }
 }
 
+/** Includes an optional string field only when its value exists. */
 function optionalString<TKey extends string>(key: TKey, value: string | undefined): { [K in TKey]?: string } {
   return value === undefined ? {} : { [key]: value } as { [K in TKey]?: string };
 }

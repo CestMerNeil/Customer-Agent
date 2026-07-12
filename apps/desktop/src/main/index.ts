@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,18 +23,20 @@ import {
   getLocalModelProfileForRuntime,
   localModelProfiles,
   normalizeLocalRuntimeConfig,
-  runtimeConfigSupportsLocalCapability,
   validateAcceptanceRecordSet,
 } from "@customer-agent/core";
 import type { AcceptanceRecord } from "@customer-agent/core";
 import { SqliteAppStore } from "@customer-agent/db";
 import { ModelScopeManager, RuntimeProcessManager, OpenAICompatibleClient } from "@customer-agent/inference";
-import type { ModelDownloadProgress, ResponseModelRequest, ResponseModelResult } from "@customer-agent/inference";
+import type { ModelDownloadProgress, MultimodalChatRequest, ResponseModelRequest, ResponseModelResult } from "@customer-agent/inference";
 import { PddApi, PddBrowserHttpClient, PddHttpClient, PddProductSyncService, PddService, parseCookieJar } from "@customer-agent/pdd";
 import type { ProductKnowledgeExtractionInput, ProductKnowledgeExtractionResult } from "@customer-agent/pdd";
 import { appendDiagnostic, generateAndPersistReply, runInboundHandlerChain, sanitizeUserFacingError } from "./reply.js";
 import { extractKnowledgeEntries } from "./knowledge-extract.js";
+import { readDocumentText } from "./document-ingestion.js";
 import { checkForAppUpdates, getAppUpdateStatus, installDownloadedAppUpdate, setupAppUpdater } from "./updater.js";
+import { applyWindowSecurity, isTrustedRendererUrl } from "./window-security.js";
+import { resolveModelProvider, resolveModelProviderConfig, type ModelProviderCapability } from "./model-provider.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -90,8 +92,15 @@ function configureBundledPlaywright() {
   process.env.PLAYWRIGHT_BROWSERS_PATH = browsersPath;
 }
 
+/** Opens the application store with Electron's OS-backed protection for its encryption master key. */
 function getStore(): Promise<SqliteAppStore> {
-  storePromise ??= SqliteAppStore.open(path.join(app.getPath("userData"), "data"));
+  storePromise ??= SqliteAppStore.open(path.join(app.getPath("userData"), "data"), {
+    protector: {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      protect: (value) => safeStorage.encryptString(value),
+      unprotect: (value) => safeStorage.decryptString(value),
+    },
+  });
   return storePromise;
 }
 
@@ -550,11 +559,14 @@ async function runGoverned<T>(dependencyId: DependencyId, operation: () => Promi
   }
 }
 
+/** Applies dependency governance consistently to every Model Provider operation. */
 function governChatClient(client: ChatInferenceClient): ChatInferenceClient {
   return {
     chat: (prompt) => runGoverned("llm", () => client.chat(prompt)),
+    chatMultimodal: (request) => runGoverned("llm", () => client.chatMultimodal(request)),
     respond: (request) => runGoverned("llm", () => client.respond(request)),
     healthCheck: () => runGoverned("llm", () => client.healthCheck()),
+    quickCheck: () => runGoverned("llm", () => client.quickCheck()),
   };
 }
 
@@ -680,144 +692,76 @@ async function scheduleInboundQueueWakeup(): Promise<void> {
   }, delay);
 }
 
+/** Registers an IPC handler that only accepts calls from the application's trusted renderer. */
 function handle<TChannel extends IpcChannel>(
   channel: TChannel,
   listener: (request: IpcRequest<TChannel>) => Promise<IpcResponse<TChannel>> | IpcResponse<TChannel>,
 ) {
-  ipcMain.handle(channel, async (_event, request: IpcRequest<TChannel>) => listener(request));
+  ipcMain.handle(channel, async (event, request: IpcRequest<TChannel>) => {
+    if (!isTrustedRendererUrl(event.senderFrame?.url ?? event.sender.getURL(), process.env.VITE_DEV_SERVER_URL)) {
+      throw new Error("Rejected IPC request from an untrusted renderer origin.");
+    }
+    return listener(request);
+  });
 }
 
+/** Provider-independent model operations exposed to desktop business workflows. */
 interface ChatInferenceClient {
   chat(prompt: string): Promise<string>;
+  chatMultimodal(request: MultimodalChatRequest): Promise<string>;
   respond(request: ResponseModelRequest): Promise<ResponseModelResult>;
   healthCheck(): Promise<void>;
+  quickCheck(): Promise<void>;
 }
 
-function isLocalInferenceBaseUrl(baseUrl: string): boolean {
-  try {
-    const url = new URL(baseUrl);
-    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-  } catch {
-    return true;
-  }
-}
-
-function isLocalModelIdentifier(model: string): boolean {
-  return /(^https?:\/\/|\.gguf(?:$|[?#])|runtime-models|modelscope\.cn)/iu.test(model.trim());
-}
-
-function resolveModelProvider(settings: AppSettings): "local" | "remote" {
-  if (settings.modelProvider) {
-    return settings.modelProvider;
-  }
-  return settings.inference && !isLocalInferenceBaseUrl(settings.inference.baseUrl) ? "remote" : "local";
-}
-
-// ponytail: 仅开发期的 env 覆盖。打包(app.isPackaged)时一律忽略，key 不会泄进
-// 生产/CI；调试期把 DashScope/千问的 baseUrl+key+model 写进 env 即可直接生效，
-// 不必每次在 UI 里填、也不写进加密 settings。
-function envInferenceConfigOverride(): { baseUrl: string; apiKey: string; chatModel: string } | undefined {
-  if (app.isPackaged) {
-    return undefined;
-  }
-  const baseUrl = process.env.CUSTOMER_AGENT_LLM_BASE_URL?.trim();
-  const apiKey = process.env.CUSTOMER_AGENT_LLM_API_KEY?.trim();
-  const chatModel = process.env.CUSTOMER_AGENT_LLM_MODEL?.trim();
-  if (!baseUrl || !apiKey || !chatModel) {
-    return undefined;
-  }
-  return { baseUrl, apiKey, chatModel };
-}
-
-async function readDocumentText(filePath: string): Promise<string> {
-  const ext = path.extname(filePath).toLowerCase();
-  if ([".pdf", ".docx", ".doc"].includes(ext)) {
-    throw new Error(`${ext} 解析需要额外依赖（mammoth/pdf-parse），当前仅支持 txt/md/json。`);
-  }
-  const raw = await readFile(filePath, "utf8");
-  return ext === ".json" ? JSON.stringify(JSON.parse(raw), null, 2) : raw;
-}
-
-async function createInferenceClient(): Promise<ChatInferenceClient> {
+/** Creates a governed client for the selected Model Provider and requested capability. */
+async function createInferenceClient(
+  capability: ModelProviderCapability = "chat",
+  requestId = `model-provider-${Date.now()}`,
+  maxTokens?: number,
+): Promise<ChatInferenceClient> {
   const store = await getStore();
   const settings = await store.getSettings();
-  const envOverride = envInferenceConfigOverride();
-  if (envOverride) {
-    return governChatClient(new OpenAICompatibleClient({
-      ...envOverride,
-      temperature: settings.inference?.temperature ?? 0.3,
-      maxTokens: settings.inference?.maxTokens ?? 1000,
-    }));
-  }
-  if (resolveModelProvider(settings) === "local") {
-    const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-    return governChatClient(new OpenAICompatibleClient({
-      baseUrl: getRuntimeBaseUrl(runtime),
-      chatModel: runtime.modelId,
-      temperature: settings.inference?.temperature ?? 0.3,
-      maxTokens: settings.inference?.maxTokens ?? 1000,
-    }));
-  }
-  if (!settings.inference) {
-    const error = new Error("请先在模型设置中配置 OpenAI 兼容 endpoint。");
-    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
-      error: error.message,
-    });
-    throw error;
-  }
-  if (!settings.inference.baseUrl.trim() || !settings.inference.chatModel.trim()) {
-    const error = new Error("OpenAI 兼容 endpoint 配置不完整。");
-    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
-      baseUrl: settings.inference.baseUrl,
-      chatModel: settings.inference.chatModel,
-      error: error.message,
-    });
-    throw error;
-  }
-  if (isLocalInferenceBaseUrl(settings.inference.baseUrl) || isLocalModelIdentifier(settings.inference.chatModel)) {
-    const error = new Error("当前选择的是远端 API，但 endpoint 或模型仍指向本地运行时。请切换为本地模型，或填写真实远端 API URL 和模型名。");
+  try {
+    const provider = resolveModelProviderConfig(settings, capability);
+    if (provider.kind === "local") {
+      await ensureManagedRuntimeReady(provider.runtime, requestId);
+    }
+    return governChatClient(new OpenAICompatibleClient(maxTokens ? { ...provider.config, maxTokens } : provider.config));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     await appendDiagnostic(store, "inference", "provider_config_mismatch", {
-      baseUrl: settings.inference.baseUrl,
-      chatModel: settings.inference.chatModel,
-      error: error.message,
+      provider: resolveModelProvider(settings),
+      capability,
+      error: sanitizeUserFacingError(message),
     });
     throw error;
   }
-  return governChatClient(new OpenAICompatibleClient(settings.inference));
 }
 
+/** Creates product extraction through the currently selected Model Provider. */
 async function createProductKnowledgeExtractor(
   requestId: string,
 ): Promise<(input: ProductKnowledgeExtractionInput) => Promise<ProductKnowledgeExtractionResult>> {
   const store = await getStore();
   const settings = await store.getSettings();
-  const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-  if (!runtimeConfigSupportsLocalCapability(runtime, "vision")) {
-    throw new Error("当前本地模型档案不支持商品图片理解。请选择带 vision 能力和 mmproj 的本地多模态模型后再同步商品。");
-  }
-  await ensureManagedRuntimeReady(runtime, requestId);
-  const profile = getLocalModelProfileForRuntime(runtime);
-  const client = new OpenAICompatibleClient({
-    baseUrl: getRuntimeBaseUrl(runtime),
-    chatModel: runtime.modelId,
-    temperature: 0.2,
-    maxTokens: 1400,
-  });
+  const provider = resolveModelProviderConfig(settings, "multimodal");
+  const client = await createInferenceClient("multimodal", requestId);
 
   return async (input) => {
     const imageUrls = collectProductImageUrls(input);
-    const raw = await runGoverned("llm", () => client.chatMultimodal({
+    const raw = await client.chatMultimodal({
       system: PRODUCT_KNOWLEDGE_EXTRACTION_SYSTEM_PROMPT,
       text: buildProductExtractionPrompt(input),
       imageUrls,
       responseFormat: "json_object",
-    }));
+    });
     return {
       content: formatProductExtractionContent(input.baseContent, raw),
       tags: buildProductExtractionTags(raw),
       sourceMetadata: {
-        extractionModel: runtime.modelId,
-        localProfileId: profile?.id ?? "",
+        extractionModel: provider.config.chatModel,
+        modelProvider: provider.kind,
         multimodal: true,
         imageCount: imageUrls.length,
       },
@@ -825,6 +769,7 @@ async function createProductKnowledgeExtractor(
   };
 }
 
+/** Creates a sandboxed browser-backed PDD API and returns its context cleanup operation. */
 async function createBrowserBackedPddApiForAccount(
   account: AccountRecord,
   antiContent: string,
@@ -836,7 +781,6 @@ async function createBrowserBackedPddApiForAccount(
       headless: true,
       args: [
         "--disable-gpu",
-        "--no-sandbox",
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
         "--disable-notifications",
@@ -1271,9 +1215,7 @@ function setupIpc() {
       const options = {
         title: "选择要解析的文档",
         properties: ["openFile" as const],
-        // ponytail: txt/md/json read natively. pdf/docx need a parser dep
-        // (mammoth/pdf-parse) — add the filter + parse branch once it's installed.
-        filters: [{ name: "文档", extensions: ["txt", "md", "markdown", "json"] }],
+        filters: [{ name: "文档", extensions: ["docx", "xlsx", "pptx", "txt", "md", "markdown", "json"] }],
       };
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       if (result.canceled || !result.filePaths[0]) {
@@ -1286,21 +1228,44 @@ function setupIpc() {
   });
 
   handle("knowledge.document.import", async (request) => {
+    let text: string;
     try {
-      const text = await readDocumentText(request.filePath);
+      text = await readDocumentText(request.filePath);
       if (!text.trim()) {
-        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "文档为空或无法解析出文本。" };
+        return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: "文件读取失败：文档中没有可提取的文本。" };
       }
-      const client = await createInferenceClient();
-      const rows = await extractKnowledgeEntries(text, client);
-      if (!rows.length) {
-        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "未能从文档中抽取出知识条目。" };
-      }
-      const store = await getStore();
-      const result = await store.importCustomerServiceKnowledgeRows({ shopId: request.shopId, rows, reviewState: "draft" });
-      return { ok: true, entries: rows.length, ...result };
     } catch (error) {
-      return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
+      return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: `文件读取失败：${sanitizeUserFacingError(error instanceof Error ? error.message : String(error))}` };
+    }
+    try {
+      // 提取输出体量约等于片段原文，默认 1000 token 会截断 JSON
+      const client = await createInferenceClient("chat", `knowledge-extract-${Date.now()}`, 3000);
+      const fileName = path.basename(request.filePath);
+      const result = await extractKnowledgeEntries(text, client, (progress) => {
+        mainWindow?.webContents.send("knowledge.document.progress", { ...progress, requestId: request.requestId, fileName });
+      });
+      if (!result.entries.length) {
+        const details = result.failures.slice(0, 3).map((failure) => `第 ${failure.segment} 段：${failure.error}`).join("；");
+        return {
+          ok: false,
+          entries: [],
+          segmentsTotal: result.total,
+          segmentsCompleted: result.completed,
+          failures: result.failures,
+          error: details ? `AI 知识提取失败：${details}` : "未从文档中提取到有效知识条目（文档内容可能不含客服知识）。",
+        };
+      }
+      return {
+        ok: true,
+        fileName,
+        fileType: path.extname(request.filePath).slice(1).toLowerCase(),
+        entries: result.entries,
+        segmentsTotal: result.total,
+        segmentsCompleted: result.completed,
+        failures: result.failures,
+      };
+    } catch (error) {
+      return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: `AI 知识提取失败：${sanitizeUserFacingError(error instanceof Error ? error.message : String(error))}` };
     }
   });
 
@@ -1391,12 +1356,14 @@ function setupIpc() {
 	            ...optionalNumber("maxPages", request.maxPages),
 	          });
 	          productSyncControllers.delete(runId);
-	          if (run.failures.length) {
+	          const sanitizedRun = sanitizeProductSyncProgress(run);
+	          if (sanitizedRun.failures.length) {
 	            await appendDiagnostic(store, "knowledge", "product_sync_failure", {
 	              shopId: syncAccount.shopId,
 	              runId,
-	              failures: String(run.failures.length),
-	              error: run.failures[0]?.error ?? "商品同步失败",
+	              provider: resolveModelProvider(await store.getSettings()),
+	              failures: String(sanitizedRun.failures.length),
+	              error: sanitizedRun.failures[0]?.error ?? "商品同步失败",
 	            });
 	          }
 	          await store.appendLog("info", `商品同步结束：${run.phase}，新增 ${run.added}，更新 ${run.updated}，跳过 ${run.skipped}，失败 ${run.failed}`);
@@ -1410,7 +1377,7 @@ function setupIpc() {
 	          ...initial,
 	          phase: "failed" as const,
 	          failed: 1,
-	          failures: [{ error: error instanceof Error ? error.message : String(error), retryable: true }],
+	          failures: [{ error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)), retryable: true }],
 	        };
 	        updateProductSyncProgress(failed);
 	      });
@@ -1740,11 +1707,16 @@ function setupIpc() {
     return { ok: true };
   });
 
-  handle("inference.health", async () => {
+  handle("inference.health", async (request) => {
     try {
       dependencyGovernor.reset("llm");
       const client = await createInferenceClient();
-      await client.healthCheck();
+      // 轮询/页面加载用轻量探活（GET /models，毫秒级）；只有显式测试才做完整对话验证
+      if (request?.thorough) {
+        await client.healthCheck();
+      } else {
+        await client.quickCheck();
+      }
       dependencyGovernor.reset("llm");
       void processInboundQueue();
       return { ok: true };
@@ -1903,12 +1875,24 @@ async function collectJsonFiles(dir: string): Promise<string[]> {
   return files;
 }
 
+/** Stores and broadcasts product-sync progress with provider errors sanitized for UI display. */
 function updateProductSyncProgress(progress: ProductSyncProgress): void {
-  const snapshot = { ...progress, failures: [...progress.failures] };
+  const snapshot = sanitizeProductSyncProgress(progress);
   productSyncRuns.set(progress.runId, snapshot);
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send("product.sync.progress", snapshot);
   }
+}
+
+/** Redacts every product-sync failure while preserving progress counters and retry metadata. */
+function sanitizeProductSyncProgress(progress: ProductSyncProgress): ProductSyncProgress {
+  return {
+    ...progress,
+    failures: progress.failures.map((failure) => ({
+      ...failure,
+      error: sanitizeUserFacingError(failure.error),
+    })),
+  };
 }
 
 function optionalNumber<TKey extends string>(key: TKey, value: number | undefined): { [K in TKey]?: number } {
@@ -1923,6 +1907,7 @@ function safePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+/** Creates the isolated application window and installs its navigation security policy. */
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -1932,19 +1917,25 @@ async function createWindow() {
     show: false,
     title: "拼多多 AI 客服助手",
     icon: windowIconPath,
-    // macOS: let the sidebar run edge-to-edge under inset traffic lights.
-    titleBarStyle: "hiddenInset",
+    // Keep native Windows controls, but reserve inset chrome only for macOS.
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : { autoHideMenuBar: true }),
     webPreferences: {
       preload: path.join(dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (process.platform === "win32") {
+    mainWindow.removeMenu();
+  }
   mainWindow.on("closed", () => {
     mainWindow = undefined;
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  applyWindowSecurity(mainWindow.webContents, devServerUrl);
   if (devServerUrl) {
     await mainWindow.loadURL(devServerUrl);
   } else {
@@ -1954,12 +1945,27 @@ async function createWindow() {
   mainWindow.focus();
 }
 
+/** Emits the packaged-smoke ready signal and requests a clean exit without starting business workers. */
+async function completePackagedSmokeIfRequested(): Promise<boolean> {
+  const readyFile = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_READY_FILE;
+  if (!readyFile) {
+    return false;
+  }
+  await getStore();
+  await writeFile(readyFile, JSON.stringify({ ready: true, version: app.getVersion() }), "utf8");
+  setImmediate(() => app.quit());
+  return true;
+}
+
 app.whenReady().then(async () => {
   try {
     configureBundledPlaywright();
     await createWindow();
     setupIpc();
     setupAppUpdater();
+    if (await completePackagedSmokeIfRequested()) {
+      return;
+    }
     if (app.isPackaged) {
       setTimeout(() => {
         void checkForAppUpdates();

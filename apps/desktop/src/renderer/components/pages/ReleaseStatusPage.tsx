@@ -79,7 +79,7 @@ export const ReleaseStatusPage: React.FC = () => {
               fontWeight: 700,
               letterSpacing: ".1em",
               color: tokens.color.text.tertiary,
-              borderBottom: "1px solid #f0f0f0",
+              borderBottom: `1px solid ${tokens.color.border.hairline}`,
             }}
           >
             <Box sx={{ flex: 1 }}>Capability</Box>
@@ -104,11 +104,11 @@ function GateRow({ ok, label, detail, last }: { ok: boolean; label: string; deta
   return (
     <Stack
       direction="row"
-      sx={{ alignItems: "center", gap: 1.5, p: "13px 2px", borderBottom: last ? "none" : "1px solid #f0f0f0" }}
+      sx={{ alignItems: "center", gap: 1.5, p: "13px 2px", borderBottom: last ? "none" : `1px solid ${tokens.color.border.hairline}` }}
     >
       <span
         className="material-symbols-rounded" aria-hidden="true"
-        style={{ fontSize: 19, color: ok ? "#059669" : "#b45309" }}
+        style={{ fontSize: 19, color: ok ? tokens.color.state.success : tokens.color.state.warning }}
       >
         {ok ? "check_circle" : "pending"}
       </span>
@@ -133,9 +133,9 @@ function GateRow({ ok, label, detail, last }: { ok: boolean; label: string; deta
 
 function CapabilityRow({ row, last }: { row: AcceptanceCapabilityMatrixRow; last: boolean }) {
   return (
-    <Box sx={{ display: "flex", alignItems: "center", p: "12px 2px", borderBottom: last ? "none" : "1px solid #f0f0f0" }}>
+    <Box sx={{ display: "flex", alignItems: "center", p: "12px 2px", borderBottom: last ? "none" : `1px solid ${tokens.color.border.hairline}` }}>
       <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{row.capability}</Typography>
-      <Typography sx={{ width: 130, fontSize: 12, fontWeight: 500, color: "#525252" }}>
+      <Typography sx={{ width: 130, fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>
         {row.requiredScopes === "two-shop" ? "双账号/双店铺" : "平台"}
       </Typography>
       <Box sx={{ width: 130 }}>

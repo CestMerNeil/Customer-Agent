@@ -4,7 +4,8 @@ export type CustomerAgentToolName =
   | "get_shop_products"
   | "send_goods_link"
   | "get_product_knowledge"
-  | "search_customer_service_knowledge"
+  | "list_customer_service_knowledge"
+  | "get_customer_service_knowledge"
   | "transfer_conversation";
 
 export interface CustomerAgentToolCall {

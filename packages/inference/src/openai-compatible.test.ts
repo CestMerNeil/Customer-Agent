@@ -79,8 +79,35 @@ describe("OpenAICompatibleClient", () => {
     await expect(client.healthCheck()).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/v1/chat/completions",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST", signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("quick-checks via GET /models with auth instead of running a completion", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma", apiKey: "sk-test" },
+      fetchMock,
+    );
+    await expect(client.quickCheck()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it("maps a health-check timeout to a friendly message instead of a raw abort error", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://10.255.255.1/v1", chatModel: "gemma" },
+      fetchMock,
+    );
+    await expect(client.healthCheck()).rejects.toThrow(/连接超时/);
+    // the probe must pass an abort signal so an unreachable host can't hang past the bound
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal: expect.any(AbortSignal) });
   });
 
   it("sends multimodal chat messages with text and image content parts", async () => {
@@ -231,4 +258,5 @@ describe("OpenAICompatibleClient", () => {
       { role: "tool", tool_call_id: "call-1", content: "{\"ok\":true}" },
     ]));
   });
+
 });

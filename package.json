@@ -16,9 +16,16 @@
     "local-model:validate": "pnpm --filter @customer-agent/core build && node scripts/local-model-manifest.mjs",
     "local-model:probe": "pnpm --filter @customer-agent/inference build && node scripts/local-model-capability-probe.mjs",
     "release:gate": "pnpm --filter @customer-agent/core build && node scripts/release-gate.mjs",
+    "release:metadata": "pnpm --filter @customer-agent/core build && node scripts/release-metadata.mjs",
     "pdd:calibration:template": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs template",
     "pdd:calibration:validate": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs validate",
     "pdd:calibration:summarize": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs summarize"
+  },
+  "overrides": {
+    "form-data": "4.0.6",
+    "js-yaml": "4.3.0",
+    "tar": "7.5.19",
+    "undici": "6.27.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -27,6 +34,6 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

@@ -129,11 +129,11 @@ type InferenceTopStatus = {
 
 type InferenceHealthEvent = CustomEvent<{
   modelProvider?: ModelProvider;
-  ok: boolean;
+  ok: boolean | null;
   error?: string;
 }>;
 
-const providerLabel = (provider: ModelProvider) => provider === "remote" ? "Responses API" : "本地模型";
+const providerLabel = (provider: ModelProvider) => provider === "remote" ? "云端 AI" : "本地 AI";
 
 export function App() {
   const [activeId, setActiveId] = useState("overview");
@@ -224,12 +224,12 @@ export function App() {
   const topInferenceStatus = useMemo(() => {
     const labelPrefix = providerLabel(inferenceTopStatus.provider);
     if (inferenceTopStatus.ok === null) {
-      return { label: `${labelPrefix} 检查中`, tone: "neutral" as const };
+      return { label: `正在检查${labelPrefix}…`, tone: "neutral" as const };
     }
     if (inferenceTopStatus.ok) {
-      return { label: `${labelPrefix} 可用`, tone: "success" as const };
+      return { label: `${labelPrefix} 已连接`, tone: "success" as const };
     }
-    return { label: `${labelPrefix} 不可用`, tone: "error" as const };
+    return { label: `${labelPrefix} 未连接`, tone: "error" as const };
   }, [inferenceTopStatus]);
 
   return (

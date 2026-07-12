@@ -172,7 +172,8 @@ function isCustomerAgentToolName(value: string): value is CustomerAgentToolName 
   return value === "get_shop_products"
     || value === "send_goods_link"
     || value === "get_product_knowledge"
-    || value === "search_customer_service_knowledge"
+    || value === "list_customer_service_knowledge"
+    || value === "get_customer_service_knowledge"
     || value === "transfer_conversation";
 }
 
@@ -180,6 +181,7 @@ function buildResponsesInstructions(context: CustomerServiceContext, tools: Cust
   return [
     "你是拼多多商家客服 Agent。请用自然、简短、礼貌的中文客服口吻处理买家消息。",
     "商品事实、库存、价格、适配、订单、物流、售后政策必须先调用工具核验；工具没有结果时，不要编造。",
+    "需要店铺客服知识时，先调用 list_customer_service_knowledge 查看目录，由你判断相关知识 ID，再调用 get_customer_service_knowledge 获取全文。不得只根据目录标题回答。",
     "寒暄、低信息追问或买家不满时，可以直接给出正常客服回应，并引导买家补充商品、订单或售后问题。",
     "不要输出调试说明，不要解释你的推理过程，不要暴露工具名或内部 JSON。",
     `店铺ID：${context.shopId}`,
@@ -238,11 +240,23 @@ function toolParameters(name: CustomerAgentToolName): Record<string, unknown> {
       },
     };
   }
-  if (name === "search_customer_service_knowledge") {
+  if (name === "list_customer_service_knowledge") {
     return {
-      query: {
-        type: "string",
-        description: "要检索的售前、售后、物流或客服政策问题。",
+      page: {
+        type: "integer",
+        minimum: 1,
+        description: "知识目录页码，从 1 开始；默认第 1 页。",
+      },
+    };
+  }
+  if (name === "get_customer_service_knowledge") {
+    return {
+      citation_ids: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: 10,
+        description: "从客服知识目录中选择的精确 citation ID 列表。",
       },
     };
   }

@@ -1,6 +1,7 @@
 export { OpenAICompatibleClient } from "./openai-compatible.js";
 export type {
   InferenceConfig,
+  MultimodalChatRequest,
   ResponseModelRequest,
   ResponseModelResult,
   ResponseModelToolCall,

@@ -6,15 +6,17 @@ import { tokens } from "../../theme";
 
 /** Design banner: colored icon circle + title + description + trailing chip. */
 const StatusBanner: React.FC<{
-  tone: "success" | "warning";
+  tone: "success" | "warning" | "neutral";
   title: string;
   description: React.ReactNode;
   badge: string;
   icon: string;
 }> = ({ tone, title, description, badge, icon }) => {
   const palette = tone === "success"
-    ? { border: "#cdebd8", bg: "#f4fbf6", iconBg: "#059669", sub: "#3f7a5a", chipCol: tokens.color.state.success, chipBg: tokens.color.state.successSoft }
-    : { border: "#f0d9a8", bg: "#fffbf2", iconBg: "#e0900a", sub: "#9a6a12", chipCol: tokens.color.state.warning, chipBg: tokens.color.state.warningSoft };
+    ? { border: tokens.color.state.success, bg: tokens.color.state.successSoft, iconBg: tokens.color.state.success, sub: tokens.color.state.success, chipCol: tokens.color.state.success, chipBg: tokens.color.state.successSoft }
+    : tone === "neutral"
+      ? { border: tokens.color.border.hairline, bg: tokens.color.control.fill, iconBg: tokens.color.text.secondary, sub: tokens.color.text.secondary, chipCol: tokens.color.text.secondary, chipBg: tokens.color.control.fill }
+      : { border: tokens.color.state.warning, bg: tokens.color.state.warningSoft, iconBg: tokens.color.state.warning, sub: tokens.color.state.warning, chipCol: tokens.color.state.warning, chipBg: tokens.color.state.warningSoft };
   return (
     <Box
       sx={{
@@ -29,7 +31,7 @@ const StatusBanner: React.FC<{
       }}
     >
       <Box sx={{ width: 38, height: 38, flex: "none", borderRadius: "50%", bgcolor: palette.iconBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 23, color: "#fff" }}>{icon}</span>
+        <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 23, color: tokens.color.surface.onInverse }}>{icon}</span>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography sx={{ fontWeight: 700, fontSize: 15 }}>{title}</Typography>
@@ -53,7 +55,7 @@ const CheckChip: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
       fontSize: 11,
       fontWeight: 600,
       color: ok ? tokens.color.state.success : tokens.color.text.secondary,
-      bgcolor: ok ? tokens.color.state.successSoft : "#7373731a",
+      bgcolor: ok ? tokens.color.state.successSoft : tokens.color.control.fill,
       p: "5px 11px",
       borderRadius: "999px",
       display: "flex",
@@ -80,7 +82,7 @@ const ActionRow: React.FC<{ label: string; description: string; action: React.Re
       alignItems: "center",
       gap: "14px",
       p: "11px 2px",
-      ...(borderTop ? { borderTop: "1px solid #f0f0f0" } : { borderBottom: "1px solid #f0f0f0" }),
+      ...(borderTop ? { borderTop: `1px solid ${tokens.color.border.hairline}` } : { borderBottom: `1px solid ${tokens.color.border.hairline}` }),
     }}
   >
     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -133,6 +135,17 @@ export const ModelSettings: React.FC = () => {
     percent?: number;
   } | null>(null);
 
+  // 顶栏状态依赖这个事件保持同步：任何 health / provider 变化都必须广播，否则顶栏显示过时状态
+  const broadcastHealth = (provider: ModelProvider, result: { ok: boolean; error?: string } | null) => {
+    window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
+      detail: {
+        modelProvider: provider,
+        ok: result ? result.ok : null,
+        ...(result?.error ? { error: result.error } : {}),
+      },
+    }));
+  };
+
   useEffect(() => {
     void (async () => {
       const [configResponse, settingsResponse, healthResponse] = await Promise.all([
@@ -160,6 +173,7 @@ export const ModelSettings: React.FC = () => {
         await loadLocalModelState(persistedRuntime);
       }
       setHealth(healthResponse);
+      broadcastHealth(nextProvider, healthResponse);
     })();
   }, []);
 
@@ -187,8 +201,15 @@ export const ModelSettings: React.FC = () => {
       }
       void window.customerAgent
         .invoke("inference.health", undefined)
-        .then(setHealth)
-        .catch(() => setHealth({ ok: false, error: "AI 状态读取失败。" }));
+        .then((result) => {
+          setHealth(result);
+          broadcastHealth(modelProvider, result);
+        })
+        .catch(() => {
+          const failure = { ok: false, error: "AI 状态读取失败。" };
+          setHealth(failure);
+          broadcastHealth(modelProvider, failure);
+        });
     }, 5_000);
     return () => window.clearInterval(id);
   }, [modelProvider]);
@@ -216,15 +237,9 @@ export const ModelSettings: React.FC = () => {
   const test = async () => {
     const label = modelProvider === "local" ? "本地推理" : "远端连接";
     setActionMessage(`正在测试${label}...`);
-    const result = await window.customerAgent.invoke("inference.health", undefined);
+    const result = await window.customerAgent.invoke("inference.health", { thorough: true });
     setHealth(result);
-    window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
-      detail: {
-        modelProvider,
-        ok: result.ok,
-        ...(result.error ? { error: result.error } : {}),
-      },
-    }));
+    broadcastHealth(modelProvider, result);
     setActionMessage(result.ok ? `${label}测试通过。` : result.error ?? `${label}测试失败。`);
   };
 
@@ -287,6 +302,7 @@ export const ModelSettings: React.FC = () => {
     }
     setModelProvider(nextProvider);
     setHealth(null);
+    broadcastHealth(nextProvider, null);
     setSaved(false);
     setActionMessage(nextProvider === "local" ? "已切换到本地模型，请保存配置。" : "已切换到云端 AI，请保存配置。");
     if (nextProvider === "local") {
@@ -445,7 +461,7 @@ export const ModelSettings: React.FC = () => {
   const fieldInput = {
     height: 40,
     px: "13px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${tokens.color.border.strong}`,
     borderRadius: "9px",
     fontFamily: tokens.font.display,
     fontSize: 13,
@@ -457,7 +473,7 @@ export const ModelSettings: React.FC = () => {
   return (
     <Box sx={{ maxWidth: 780 }}>
       {/* mode toggle */}
-      <Box sx={{ display: "inline-flex", bgcolor: "#f4f4f4", borderRadius: "10px", p: "4px", gap: "4px", mb: 1 }}>
+      <Box sx={{ display: "inline-flex", bgcolor: tokens.color.control.fill, borderRadius: "10px", p: "4px", gap: "4px", mb: 1 }}>
         {([
           ["local", "computer", "本地 AI"],
           ["remote", "cloud", "云端 AI"],
@@ -475,8 +491,8 @@ export const ModelSettings: React.FC = () => {
                 all: "unset",
                 p: "8px 20px",
                 borderRadius: "7px",
-                bgcolor: selected ? "#fff" : "transparent",
-                color: selected ? tokens.color.text.primary : "#8a8a8a",
+                bgcolor: selected ? tokens.color.surface.base : "transparent",
+                color: selected ? tokens.color.text.primary : tokens.color.text.secondary,
                 boxShadow: selected ? "0 1px 2px rgba(0,0,0,.08)" : "none",
                 fontSize: 12,
                 fontWeight: 600,
@@ -547,14 +563,14 @@ export const ModelSettings: React.FC = () => {
             <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>通常无需改动</Typography>
             <span
               className="material-symbols-rounded" aria-hidden="true"
-              style={{ fontSize: 20, color: "#a3a3a3", marginLeft: "auto", transform: advOpen ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
+              style={{ fontSize: 20, color: tokens.color.text.tertiary, marginLeft: "auto", transform: advOpen ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
             >
               expand_more
             </span>
           </Stack>
           <Collapse in={advOpen}>
             <Box>
-              <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 2px", borderTop: "1px solid #f0f0f0" }}>
+              <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 2px", borderTop: `1px solid ${tokens.color.border.hairline}` }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography sx={{ fontWeight: 600, fontSize: 13 }}>模型档案</Typography>
                   <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>
@@ -610,10 +626,10 @@ export const ModelSettings: React.FC = () => {
                     onClick={() => void deleteWeights()}
                     sx={{
                       ...actionButton,
-                      borderColor: "#e6b9b9",
-                      bgcolor: "#fdf5f5",
+                      borderColor: tokens.color.state.error,
+                      bgcolor: tokens.color.state.errorSoft,
                       color: tokens.color.state.error,
-                      "&:hover": { borderColor: "#e6b9b9", bgcolor: "#fbecec" },
+                      "&:hover": { borderColor: tokens.color.state.error, bgcolor: tokens.color.state.errorSoft },
                     }}
                   >
                     清理
@@ -654,15 +670,17 @@ export const ModelSettings: React.FC = () => {
           </Typography>
 
           <StatusBanner
-            tone={cloudConnected ? "success" : "warning"}
-            icon={cloudConnected ? "check" : "cloud_off"}
-            title={cloudConnected ? "已连接" : "尚未连接"}
+            tone={cloudConnected ? "success" : health === null ? "neutral" : "warning"}
+            icon={cloudConnected ? "check" : health === null ? "sync" : "cloud_off"}
+            title={cloudConnected ? "已连接" : health === null ? "正在检查连接…" : "尚未连接"}
             description={
               cloudConnected
                 ? "云端 AI 已启用，正在生成客服回复。"
-                : "填写下方密钥并测试连接后，即可启用云端 AI 回复。"
+                : health === null
+                  ? "正在确认云端 AI 服务是否可用，请稍候。"
+                  : "填写下方密钥并测试连接后，即可启用云端 AI 回复。"
             }
-            badge={cloudConnected ? "已连接" : "待配置"}
+            badge={cloudConnected ? "已连接" : health === null ? "检查中" : "待配置"}
           />
 
           <Box sx={{ pb: 1.5, borderBottom: `1px solid ${tokens.color.text.primary}`, mb: 2, mt: "14px" }}>
@@ -690,7 +708,7 @@ export const ModelSettings: React.FC = () => {
                     onClick={() => setShowApiKey((current) => !current)}
                     sx={{ all: "unset", cursor: "pointer", display: "flex" }}
                   >
-                    <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18, color: "#a3a3a3" }}>
+                    <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 18, color: tokens.color.text.tertiary }}>
                       {showApiKey ? "visibility" : "visibility_off"}
                     </span>
                   </Box>
@@ -702,7 +720,7 @@ export const ModelSettings: React.FC = () => {
                 <Typography sx={{ fontSize: 12, fontWeight: 600 }}>服务地址</Typography>
                 <Typography sx={{ fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary }}>默认无需修改</Typography>
               </Box>
-              <InputBase value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} sx={{ ...fieldInput, color: "#525252" }} />
+              <InputBase value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} sx={{ ...fieldInput, color: tokens.color.text.secondary }} />
             </Box>
             <Box>
               <Box sx={fieldLabelRow}>

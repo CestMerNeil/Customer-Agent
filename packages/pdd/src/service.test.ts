@@ -273,6 +273,61 @@ describe("PddService login session capture", () => {
       "anti-content": "anti-from-refresh",
     });
   });
+
+  it("keeps the Chromium sandbox enabled for browser login sessions", async () => {
+    const launchOptions: Array<{ args: string[] }> = [];
+    const page = {
+      async goto() {},
+      async click() {},
+      async fill() {},
+      async waitForFunction() {},
+      async waitForURL() {
+        throw new Error("still authenticated");
+      },
+      async waitForLoadState() {},
+      async waitForTimeout() {},
+      async title() {
+        return "首页";
+      },
+      url() {
+        return "https://mms.pinduoduo.com/home/";
+      },
+      on() {},
+      off() {},
+    };
+    const service = new PddService({
+      dataDir: "/tmp/customer-agent-test",
+      playwright: {
+        chromium: {
+          launchPersistentContext: async (_userDataDir: string, options: { args: string[] }) => {
+            launchOptions.push(options);
+            return {
+              pages: () => [page],
+              newPage: async () => page,
+              cookies: async () => [{ name: "api_uid", value: "uid-a" }],
+              close: async () => undefined,
+            };
+          },
+        },
+      } as never,
+      saveAccount: async (account) => ({
+        ...account,
+        id: account.id ?? "account-1",
+        createdAt: "2026-06-25T00:00:00.000Z",
+        updatedAt: "2026-06-25T00:00:00.000Z",
+      }),
+      log: async () => undefined,
+    });
+    (service as unknown as { createApi(cookies: string | Record<string, string> | undefined): unknown }).createApi = () => ({
+      getUserInfo: async () => ({ userId: "user-1", username: "operator", mallId: "mall-1" }),
+      getShopInfo: async () => ({ shopId: "shop-1", shopName: "测试店" }),
+    });
+
+    await service.login({ channel: "pinduoduo", username: "seller" });
+
+    expect(launchOptions).toHaveLength(1);
+    expect(launchOptions[0]?.args).not.toContain("--no-sandbox");
+  });
 });
 
 describe("PddService multi-account runtime state", () => {

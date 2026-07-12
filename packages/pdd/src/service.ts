@@ -115,12 +115,22 @@ interface AntiContentCapture {
   dispose(): void;
 }
 
+/** Chromium flags used for PDD browser sessions while preserving the browser sandbox. */
+const pddBrowserArgs = [
+  "--disable-gpu",
+  "--disable-dev-shm-usage",
+  "--disable-blink-features=AutomationControlled",
+  "--disable-notifications",
+] as const;
+
+/** Coordinates PDD browser sessions, account persistence, and WebSocket runtime state. */
 export class PddService {
   private readonly connections = new Map<string, PddRuntimeConnection>();
   private readonly startLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly options: PddServiceOptions = {}) {}
 
+  /** Opens an interactive, sandboxed browser session and persists its verified account state. */
   async login(request: AccountLoginRequest): Promise<AccountLoginResult> {
     if (!request.username.trim()) {
       return { ok: false, error: "请输入拼多多账号" };
@@ -134,13 +144,7 @@ export class PddService {
       const userDataDir = path.join(this.options.dataDir, "pdd-profiles", safePathSegment(request.username));
       const context = await playwright.chromium.launchPersistentContext(userDataDir, {
         headless: false,
-        args: [
-          "--disable-gpu",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-notifications",
-        ],
+        args: [...pddBrowserArgs],
       });
       try {
         const page = context.pages()[0] ?? await context.newPage();
@@ -170,6 +174,7 @@ export class PddService {
     }
   }
 
+  /** Refreshes a saved account through a sandboxed persistent browser profile without password entry. */
   async refreshAccountSession(accountId: string): Promise<{ ok: boolean; account?: AccountRecord; error?: string }> {
     const account = await this.options.getAccount?.(accountId);
     if (!account) {
@@ -184,13 +189,7 @@ export class PddService {
       const userDataDir = path.join(this.options.dataDir, "pdd-profiles", safePathSegment(account.username));
       const context = await playwright.chromium.launchPersistentContext(userDataDir, {
         headless: true,
-        args: [
-          "--disable-gpu",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-notifications",
-        ],
+        args: [...pddBrowserArgs],
       });
       try {
         const page = context.pages()[0] ?? await context.newPage();
