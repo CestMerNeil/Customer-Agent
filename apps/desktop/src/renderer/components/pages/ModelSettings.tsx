@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Collapse, InputBase, LinearProgress, MenuItem, Select, Stack, Typography } from "@mui/material";
-import { createDefaultLocalRuntimeConfig } from "@customer-agent/core";
-import type { InferenceRuntimeConfig, LocalModelProfile, ModelProvider } from "@customer-agent/core";
+import { Alert, Box, Button, Collapse, InputBase, LinearProgress, Stack, Typography } from "@mui/material";
+import type { LocalModelProfile, ModelProvider } from "@customer-agent/core";
 import { tokens } from "../../theme";
 
 /** Design banner: colored icon circle + title + description + trailing chip. */
@@ -68,45 +67,22 @@ const CheckChip: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
   </Typography>
 );
 
-/** "常用操作" list row: label + description on the left, one action on the right. */
-const ActionRow: React.FC<{ label: string; description: string; action: React.ReactNode; labelColor?: string; borderTop?: boolean }> = ({
-  label,
-  description,
-  action,
-  labelColor,
-  borderTop,
-}) => (
-  <Stack
-    direction="row"
-    sx={{
-      alignItems: "center",
-      gap: "14px",
-      p: "11px 2px",
-      ...(borderTop ? { borderTop: `1px solid ${tokens.color.border.hairline}` } : { borderBottom: `1px solid ${tokens.color.border.hairline}` }),
-    }}
-  >
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Typography sx={{ fontWeight: 600, fontSize: 13, ...(labelColor ? { color: labelColor } : {}) }}>{label}</Typography>
-      <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>{description}</Typography>
-    </Box>
-    <Box sx={{ flexShrink: 0 }}>{action}</Box>
-  </Stack>
-);
-
 const actionButton = { height: 34, minHeight: 34, px: "15px", fontSize: 12, fontWeight: 600, borderRadius: "9px", flex: "none" } as const;
 
+/** Renders local ModelScope provisioning and remote-provider settings. */
 export const ModelSettings: React.FC = () => {
   const [modelProvider, setModelProvider] = useState<ModelProvider>("local");
+  // 持久化的 provider 是异步读取的；就绪前不渲染，避免默认值"本地 AI"闪现后跳到"云端 AI"
+  const [providerLoaded, setProviderLoaded] = useState(false);
   const [baseUrl, setBaseUrl] = useState("http://localhost:8000/v1");
   const [apiKey, setApiKey] = useState("");
+  const [hasSavedApiKey, setHasSavedApiKey] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [chatModel, setChatModel] = useState("ggml-org/gemma-3n-E2B-it-GGUF:Q8_0");
   const [health, setHealth] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState(false);
   const [queuePaused, setQueuePaused] = useState(false);
-  const [runtimeConfig, setRuntimeConfig] = useState<InferenceRuntimeConfig>({
-    ...createDefaultLocalRuntimeConfig(),
-  });
   const [runtimeStatus, setRuntimeStatus] = useState<{
     running: boolean;
     pid?: number;
@@ -115,11 +91,9 @@ export const ModelSettings: React.FC = () => {
     runtimeName?: string;
     host?: string;
     port?: number;
-    modelPath?: string;
     modelId?: string;
     modelReady?: boolean;
     runtimeReady?: boolean;
-    runtimeCommand?: string;
     runtimeError?: string;
   } | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -135,7 +109,7 @@ export const ModelSettings: React.FC = () => {
     percent?: number;
   } | null>(null);
 
-  // 顶栏状态依赖这个事件保持同步：任何 health / provider 变化都必须广播，否则顶栏显示过时状态
+  /** Broadcasts provider health so the application header stays in sync. */
   const broadcastHealth = (provider: ModelProvider, result: { ok: boolean; error?: string } | null) => {
     window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
       detail: {
@@ -148,32 +122,35 @@ export const ModelSettings: React.FC = () => {
 
   useEffect(() => {
     void (async () => {
-      const [configResponse, settingsResponse, healthResponse] = await Promise.all([
+      // 页面渲染只等本地设置（毫秒级）；网络探活单独进行，期间卡片显示"正在检查连接"
+      const [configResponse, settingsResponse] = await Promise.all([
         window.customerAgent.invoke("inference.config.get", undefined),
         window.customerAgent.invoke("settings.get", undefined),
-        window.customerAgent.invoke("inference.health", undefined).catch((error) => ({
-          ok: false,
-          error: error instanceof Error ? error.message : "AI 状态读取失败。",
-        })),
       ]);
       if (configResponse.config) {
         setBaseUrl(configResponse.config.baseUrl);
-        setApiKey(configResponse.config.apiKey ?? "");
+        setHasSavedApiKey(configResponse.config.hasApiKey);
         setChatModel(configResponse.config.chatModel);
       }
       const nextProvider = settingsResponse.settings.modelProvider
         ?? (configResponse.config && !isLocalInferenceEndpoint(configResponse.config.baseUrl) ? "remote" : "local");
       setModelProvider(nextProvider);
+      setProviderLoaded(true);
       setQueuePaused(Boolean(settingsResponse.settings.queue?.paused));
       const persistedRuntime = settingsResponse.settings.inferenceRuntime;
-      if (persistedRuntime) {
-        setRuntimeConfig((current) => ({ ...current, ...persistedRuntime }));
-      }
+      void window.customerAgent
+        .invoke("inference.health", undefined)
+        .catch((error) => ({
+          ok: false,
+          error: error instanceof Error ? error.message : "AI 状态读取失败。",
+        }))
+        .then((healthResponse) => {
+          setHealth(healthResponse);
+          broadcastHealth(nextProvider, healthResponse);
+        });
       if (nextProvider === "local") {
         await loadLocalModelState(persistedRuntime);
       }
-      setHealth(healthResponse);
-      broadcastHealth(nextProvider, healthResponse);
     })();
   }, []);
 
@@ -214,43 +191,50 @@ export const ModelSettings: React.FC = () => {
     return () => window.clearInterval(id);
   }, [modelProvider]);
 
+  /** Saves and enables the visible remote-provider configuration. */
   const save = async () => {
-    if (modelProvider === "remote") {
-      await window.customerAgent.invoke("inference.config.save", {
-        baseUrl,
-        chatModel,
-        temperature: 0.3,
-        maxTokens: 1000,
-        ...(apiKey ? { apiKey } : {}),
-      });
-      await window.customerAgent.invoke("settings.save", { modelProvider });
-    } else {
-      await window.customerAgent.invoke("settings.save", {
-        modelProvider,
-        inferenceRuntime: runtimeConfig,
-      });
+    await window.customerAgent.invoke("inference.config.save", {
+      baseUrl,
+      chatModel,
+      temperature: 0.3,
+      maxTokens: 1000,
+      ...(apiKey ? { apiKey } : {}),
+    });
+    if (apiKey) {
+      setHasSavedApiKey(true);
+      setApiKey("");
     }
+    await window.customerAgent.invoke("settings.save", { modelProvider });
     setSaved(true);
     setActionMessage("配置已保存。");
   };
 
+  /** Runs a thorough health check for the selected provider. */
   const test = async () => {
     const label = modelProvider === "local" ? "本地推理" : "远端连接";
+    setChecking(true);
     setActionMessage(`正在测试${label}...`);
-    const result = await window.customerAgent.invoke("inference.health", { thorough: true });
-    setHealth(result);
-    broadcastHealth(modelProvider, result);
-    setActionMessage(result.ok ? `${label}测试通过。` : result.error ?? `${label}测试失败。`);
+    try {
+      const result = await window.customerAgent.invoke("inference.health", { thorough: true });
+      setHealth(result);
+      broadcastHealth(modelProvider, result);
+      setActionMessage(result.ok ? `${label}测试通过。` : result.error ?? `${label}测试失败。`);
+    } finally {
+      setChecking(false);
+    }
   };
 
+  /** Clears the persisted remote API key and its health state. */
   const clearApiKey = async () => {
     await window.customerAgent.invoke("inference.config.clearApiKey", undefined);
     setApiKey("");
+    setHasSavedApiKey(false);
     setSaved(false);
     setActionMessage("API Key 已清除。");
     setHealth(null);
   };
 
+  /** Pauses or resumes automatic reply queue processing. */
   const toggleAutoReply = async () => {
     if (queuePaused) {
       const result = await window.customerAgent.invoke("queue.resume", undefined);
@@ -263,39 +247,27 @@ export const ModelSettings: React.FC = () => {
     }
   };
 
+  /** Refreshes renderer-safe managed runtime status. */
   async function refreshRuntimeStatus() {
     const status = await window.customerAgent.invoke("inference.runtime.status", undefined);
     setRuntimeStatus(status);
-    if (status.baseUrl) {
-      setRuntimeConfig((current) => ({
-        ...current,
-        ...(status.host ?? current.host ? { host: status.host ?? current.host } : {}),
-        ...(status.port ?? current.port ? { port: status.port ?? current.port } : {}),
-        modelPath: status.modelPath ?? current.modelPath,
-        modelId: status.modelId ?? current.modelId,
-        ...(status.runtimeCommand ? { command: status.runtimeCommand } : {}),
-      }));
-    }
   }
 
-  async function loadLocalModelState(preferredRuntime?: Partial<InferenceRuntimeConfig>) {
+  /** Loads approved local profiles and restores the persisted selection. */
+  async function loadLocalModelState(preferredRuntime?: { modelId?: string }) {
     const response = await window.customerAgent.invoke("inference.local.profiles", undefined);
     setProfiles(response.profiles);
     const defaultProfile = response.profiles.find((profile) => profile.defaultFor === "chat");
     if (defaultProfile) {
-      setRuntimeConfig((current) => {
-        const baseRuntime = preferredRuntime ? { ...current, ...preferredRuntime } : current;
-        const profile = response.profiles.find((item) => item.model.url === baseRuntime.modelId || item.model.id === baseRuntime.modelId) ?? defaultProfile;
-        setSelectedProfileId((selected) => selected || profile.id);
-        return {
-          ...baseRuntime,
-          ...runtimeFieldsForProfile(profile, baseRuntime),
-        };
-      });
+      const profile = response.profiles.find((item) => (
+        item.model.url === preferredRuntime?.modelId || item.model.id === preferredRuntime?.modelId
+      )) ?? defaultProfile;
+      setSelectedProfileId((selected) => selected || profile.id);
     }
     await refreshRuntimeStatus();
   }
 
+  /** Switches between local and remote provider settings. */
   const selectModelProvider = async (nextProvider: ModelProvider) => {
     if (nextProvider === modelProvider) {
       return;
@@ -304,63 +276,25 @@ export const ModelSettings: React.FC = () => {
     setHealth(null);
     broadcastHealth(nextProvider, null);
     setSaved(false);
-    setActionMessage(nextProvider === "local" ? "已切换到本地模型，请保存配置。" : "已切换到云端 AI，请保存配置。");
+    setActionMessage(nextProvider === "local" ? "已切换到本地模型，请选择并启用模型。" : "已切换到云端 AI，请保存配置。");
     if (nextProvider === "local") {
       await loadLocalModelState();
     }
   };
 
+  /** Repairs or installs the app-managed llama runtime. */
   const prepareRuntime = async () => {
     setActionMessage("正在准备本地运行时，请稍候...");
     const response = await window.customerAgent.invoke("inference.runtime.prepare", undefined);
     if (response.ok) {
-      setActionMessage(response.runtimeCommand ? `运行时已就绪：${response.runtimeCommand}` : "运行时已就绪。");
+      setActionMessage("运行时已就绪。");
       await refreshRuntimeStatus();
     } else {
       setActionMessage(response.error ?? "运行时准备失败。");
     }
   };
 
-  const download = async () => {
-    setActionMessage("正在解析/下载模型文件，请稍候...");
-    const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
-    if (!selectedProfile) {
-      setActionMessage("请先选择本地模型档案。");
-      return;
-    }
-    const requestId = crypto.randomUUID();
-    const totalBytes = profileDownloadSize(selectedProfile).totalBytes;
-    downloadProgressByModel.current = {};
-    downloadTotalBytes.current = totalBytes;
-    setDownloadRequestId(requestId);
-    setDownloadProgress({ receivedBytes: 0, ...(totalBytes === undefined ? {} : { totalBytes }) });
-    const response = await window.customerAgent.invoke("inference.modelscope.download", {
-      modelId: selectedProfile.model.url,
-      requestId,
-      ...(selectedProfile.model.sha256 ? { expectedSha256: selectedProfile.model.sha256 } : {}),
-    });
-    if (response.ok) {
-      setRuntimeConfig((current) => ({
-        ...current,
-        ...runtimeFieldsForProfile(selectedProfile, current),
-        modelPath: response.modelPath,
-        ...(response.mmprojPath ? { mmprojPath: response.mmprojPath } : {}),
-      }));
-      setDownloadProgress((current) => current ? { ...current, percent: 100 } : current);
-      setDownloadRequestId(null);
-      downloadProgressByModel.current = {};
-      downloadTotalBytes.current = undefined;
-      setActionMessage(`模型下载完成：${response.modelPath}`);
-      await refreshRuntimeStatus();
-    } else {
-      setDownloadProgress(null);
-      setDownloadRequestId(null);
-      downloadProgressByModel.current = {};
-      downloadTotalBytes.current = undefined;
-      setActionMessage(response.error ?? "模型下载失败。");
-    }
-  };
-
+  /** Downloads missing artifacts and starts the selected reviewed profile. */
   const startRuntime = async () => {
     setActionMessage("正在准备本地 AI，请稍候...");
     const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
@@ -368,18 +302,18 @@ export const ModelSettings: React.FC = () => {
       setActionMessage("请先选择本地模型档案。");
       return;
     }
-    const nextRuntimeConfig = {
-      ...runtimeConfig,
-      ...runtimeFieldsForProfile(selectedProfile, runtimeConfig),
-    };
     const requestId = crypto.randomUUID();
     const totalBytes = profileDownloadSize(selectedProfile).totalBytes;
     downloadProgressByModel.current = {};
     downloadTotalBytes.current = totalBytes;
     setDownloadRequestId(requestId);
     setDownloadProgress({ receivedBytes: 0, ...(totalBytes === undefined ? {} : { totalBytes }) });
-    const response = await window.customerAgent.invoke("inference.runtime.start", { ...nextRuntimeConfig, requestId });
+    const response = await window.customerAgent.invoke("inference.runtime.start", {
+      modelId: selectedProfile.model.url,
+      requestId,
+    });
     if (response.ok) {
+      await window.customerAgent.invoke("settings.save", { modelProvider: "local" });
       setRuntimeStatus((current) => ({
         ...(current ?? {}),
         running: response.running,
@@ -402,6 +336,7 @@ export const ModelSettings: React.FC = () => {
     }
   };
 
+  /** Stops the running profile, when needed, and activates the selected profile. */
   const restartRuntime = async () => {
     setActionMessage("正在重新启动本地 AI，请稍候...");
     if (runtimeStatus?.running) {
@@ -410,6 +345,7 @@ export const ModelSettings: React.FC = () => {
     await startRuntime();
   };
 
+  /** Deletes cached weights for the selected profile after confirmation. */
   const deleteWeights = async () => {
     const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
     if (!selectedProfile) {
@@ -426,11 +362,6 @@ export const ModelSettings: React.FC = () => {
       auxiliaryModelIds: selectedProfile.auxiliaryModels?.map((model) => model.url) ?? [],
     });
     if (response.ok) {
-      setRuntimeConfig((current) => ({
-        ...current,
-        ...(current.modelId === selectedProfile.model.url ? { modelPath: "" } : {}),
-        ...(selectedProfile.auxiliaryModels?.some((model) => model.url === current.mmprojModelId) ? { mmprojPath: "" } : {}),
-      }));
       setActionMessage(response.deleted > 0 ? `已删除 ${response.deleted} 个缓存权重。` : "没有找到可删除的缓存权重。");
       await refreshRuntimeStatus();
     } else {
@@ -438,6 +369,7 @@ export const ModelSettings: React.FC = () => {
     }
   };
 
+  /** Selects one reviewed profile and clears paths from the previous profile. */
   const selectProfile = (profileId: string) => {
     setSelectedProfileId(profileId);
     const profile = profiles.find((item) => item.id === profileId);
@@ -445,15 +377,24 @@ export const ModelSettings: React.FC = () => {
       return;
     }
     setChatModel(profile.model.id);
-    setRuntimeConfig((current) => ({
-      ...current,
-      ...runtimeFieldsForProfile(profile, current, { resetPaths: true }),
-    }));
-    setActionMessage(`已选择：${profile.label}`);
+    setActionMessage(null);
   };
 
   const localEndpoint = modelProvider === "local";
   const running = runtimeStatus?.running ?? false;
+  const selectedProfileDetails = profiles.find((profile) => profile.id === selectedProfileId);
+  const activeProfile = profiles.find((profile) => (
+    profile.model.url === runtimeStatus?.modelId || profile.model.id === runtimeStatus?.modelId
+  ));
+  const selectedIsRunning = Boolean(running && selectedProfileDetails && activeProfile?.id === selectedProfileDetails.id);
+  const selectedIsReady = Boolean(runtimeStatus?.modelReady && selectedProfileDetails && activeProfile?.id === selectedProfileDetails.id);
+  const primaryActionLabel = downloadRequestId
+    ? "正在准备…"
+    : selectedIsRunning
+      ? "重新启动当前模型"
+      : selectedIsReady
+        ? "启用此模型"
+        : `下载并启用${selectedProfileDetails ? ` · ${formatBytes(profileDownloadSize(selectedProfileDetails).totalBytes ?? 0)}` : ""}`;
 
   const cloudConnected = Boolean(health?.ok) && !localEndpoint;
 
@@ -469,6 +410,10 @@ export const ModelSettings: React.FC = () => {
     width: "100%",
     "& input": { p: 0 },
   } as const;
+
+  if (!providerLoaded) {
+    return <Box sx={{ maxWidth: 780 }} />;
+  }
 
   return (
     <Box sx={{ maxWidth: 780 }}>
@@ -511,116 +456,232 @@ export const ModelSettings: React.FC = () => {
 
       {localEndpoint ? (
         <Box>
-          <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary, mb: 2 }}>
-            在本机运行，免费、聊天内容不外传；对电脑配置有一定要求。
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary, mb: "18px" }}>
+            模型由 ModelScope 提供并在本机运行，聊天内容不外传；对电脑配置有一定要求。
           </Typography>
 
-          <StatusBanner
-            tone={running ? "success" : "warning"}
-            icon={running ? "check" : "pause"}
-            title={running ? "AI 正在工作" : "本地 AI 未加载"}
-            description={
-              running
-                ? runtimeStatus?.runtimeName ?? "运行中 · 应用托管 llama-server"
-                : "点击下方「重启」或在高级设置中准备本地 AI"
-            }
-            badge={running ? "一切正常" : "未加载"}
-          />
-
-          <Stack direction="row" spacing={1} sx={{ mb: "22px" }}>
-            <CheckChip ok={Boolean(runtimeStatus?.runtimeReady)} label={runtimeStatus?.runtimeReady ? "程序已安装" : "程序未安装"} />
-            <CheckChip ok={Boolean(runtimeStatus?.modelReady)} label={runtimeStatus?.modelReady ? "语言能力就绪" : "语言能力未就绪"} />
-            <CheckChip ok={Boolean(health?.ok)} label={health?.ok ? "回复功能正常" : "回复未测试"} />
-          </Stack>
-
-          <Box sx={{ pb: "10px", borderBottom: `1px solid ${tokens.color.text.primary}`, mb: "2px" }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 700 }}>常用操作</Typography>
-          </Box>
-          <ActionRow
-            label="检查 AI 是否正常"
-            description="试答一条测试消息，约 5 秒"
-            action={<Button variant="contained" onClick={test} sx={actionButton}>检查</Button>}
-          />
-          <ActionRow
-            label={queuePaused ? "恢复自动回复" : "暂停自动回复"}
-            description="暂停后新消息需在「队列」手动处理"
-            action={<Button variant="outlined" onClick={() => void toggleAutoReply()} sx={actionButton}>{queuePaused ? "恢复" : "暂停"}</Button>}
-          />
-          <Box sx={{ mb: "20px" }}>
-            <ActionRow
-              label="重新启动 AI"
-              description="回复变慢或异常时使用，约 1 分钟"
-              action={<Button variant="outlined" onClick={() => void restartRuntime()} sx={actionButton}>重启</Button>}
-            />
-          </Box>
-
-          <Stack
-            direction="row"
-            onClick={() => setAdvOpen((open) => !open)}
-            sx={{ alignItems: "center", gap: 1, p: "11px 2px", borderTop: `1px solid ${tokens.color.border.hairline}`, cursor: "pointer" }}
-          >
-            <Typography sx={{ fontWeight: 700, fontSize: 12 }}>高级设置</Typography>
-            <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>通常无需改动</Typography>
-            <span
-              className="material-symbols-rounded" aria-hidden="true"
-              style={{ fontSize: 20, color: tokens.color.text.tertiary, marginLeft: "auto", transform: advOpen ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
-            >
-              expand_more
-            </span>
-          </Stack>
-          <Collapse in={advOpen}>
-            <Box>
-              <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 2px", borderTop: `1px solid ${tokens.color.border.hairline}` }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 600, fontSize: 13 }}>模型档案</Typography>
-                  <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>
-                    {runtimeConfig.modelId || "—"}
-                  </Typography>
-                </Box>
-                <Select
-                  size="small"
-                  value={selectedProfileId}
-                  onChange={(event) => selectProfile(event.target.value)}
-                  sx={{ height: 34, borderRadius: "9px", fontSize: 12, fontWeight: 600, minWidth: 220 }}
+          {/* Two-column split (design "Real Frontend"): 选择模型 | 运行状态. */}
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1.35fr 1fr" }, gap: "20px", alignItems: "stretch" }}>
+            {/* left: model select */}
+            <Box sx={{ border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "14px", p: "18px 20px", display: "flex", flexDirection: "column" }}>
+              <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", pb: "11px", borderBottom: `1px solid ${tokens.color.text.primary}`, mb: "12px" }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700 }}>选择模型</Typography>
+                <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>均支持图片 + 文本</Typography>
+              </Box>
+              {profiles.map((profile) => {
+                const selected = profile.id === selectedProfileId;
+                const highEnd = profile.parameters.totalBillions === 35;
+                const rowRunning = Boolean(running && activeProfile?.id === profile.id);
+                return (
+                  <Box
+                    key={profile.id}
+                    component="button"
+                    type="button"
+                    aria-label={`选择 ${profile.label}`}
+                    aria-pressed={selected}
+                    onClick={() => selectProfile(profile.id)}
+                    sx={{
+                      all: "unset",
+                      boxSizing: "border-box",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      p: "14px 16px",
+                      mb: "9px",
+                      border: `1px solid ${selected ? tokens.color.state.success : tokens.color.border.hairline}`,
+                      borderRadius: "12px",
+                      bgcolor: selected ? tokens.color.surface.selected : tokens.color.surface.base,
+                      transition: `border-color ${tokens.motion.duration.fast}, background-color ${tokens.motion.duration.fast}`,
+                      "&:hover": { borderColor: selected ? tokens.color.state.success : tokens.color.border.strong },
+                      "&:focus-visible": { outline: `2px solid ${tokens.color.border.focus}`, outlineOffset: "2px" },
+                    }}
+                  >
+                    <Box
+                      aria-hidden
+                      sx={{
+                        width: 15,
+                        height: 15,
+                        flex: "none",
+                        boxSizing: "border-box",
+                        borderRadius: "50%",
+                        border: `${selected ? "5px" : "1.5px"} solid ${selected ? tokens.color.state.success : tokens.color.border.strong}`,
+                      }}
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <Typography component="span" sx={{ fontSize: 13, fontWeight: 700 }}>{profile.label}</Typography>
+                        {profile.defaultFor === "chat" && (
+                          <Typography component="span" sx={{ fontSize: 9, fontWeight: 700, color: tokens.color.state.success, bgcolor: tokens.color.state.successSoft, px: "7px", py: "2px", borderRadius: "999px" }}>
+                            推荐
+                          </Typography>
+                        )}
+                        {rowRunning && (
+                          <Typography component="span" sx={{ fontSize: 9, fontWeight: 700, color: tokens.color.state.success, bgcolor: tokens.color.state.successSoft, px: "7px", py: "2px", borderRadius: "999px" }}>
+                            运行中
+                          </Typography>
+                        )}
+                      </Box>
+                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.secondary, mt: "2px", lineHeight: 1.5 }}>
+                        {profile.defaultFor === "chat"
+                          ? "质量与资源占用均衡，适合多数客服场景"
+                          : highEnd
+                            ? "理解能力更强，需要高配电脑，占用大内存"
+                            : "占用更低，适合内存较小的电脑"}
+                      </Typography>
+                      {highEnd && (
+                        <Typography sx={{ fontSize: 10, fontWeight: 600, color: tokens.color.state.warning, mt: "3px", lineHeight: 1.45 }}>
+                          35B 权重；A3B 不等于只占 3B 内存。
+                        </Typography>
+                      )}
+                    </Box>
+                    <Typography component="span" sx={{ flex: "none", fontSize: 10, fontWeight: 600, color: tokens.color.text.secondary, bgcolor: tokens.color.control.fill, px: "8px", py: "4px", borderRadius: "999px" }}>
+                      {formatBytes(profileDownloadSize(profile).totalBytes ?? 0)}
+                    </Typography>
+                  </Box>
+                );
+              })}
+              <Box sx={{ mt: "auto" }}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  disabled={!selectedProfileDetails || Boolean(downloadRequestId)}
+                  onClick={() => void restartRuntime()}
+                  startIcon={
+                    <span
+                      className={downloadRequestId ? "material-symbols-rounded ca-spin" : "material-symbols-rounded"}
+                      aria-hidden="true"
+                      style={{ fontSize: 18 }}
+                    >
+                      {downloadRequestId ? "progress_activity" : selectedIsRunning ? "restart_alt" : "download"}
+                    </span>
+                  }
+                  sx={{ height: 38, borderRadius: "10px", fontSize: 13, "&.Mui-disabled": { color: tokens.color.text.onAccent, bgcolor: tokens.color.accent.main, opacity: 0.7 } }}
                 >
-                  {profiles.map((profile) => (
-                    <MenuItem key={profile.id} value={profile.id}>
-                      {profile.label} · {profile.capabilities.join("/")}
-                    </MenuItem>
-                  ))}
-                </Select>
+                  {primaryActionLabel}
+                </Button>
+                {downloadProgress ? (
+                  <Box sx={{ mt: "8px" }}>
+                    <LinearProgress
+                      variant={downloadProgress.percent === undefined ? "indeterminate" : "determinate"}
+                      value={downloadProgress.percent ?? 0}
+                      sx={{ height: 4, borderRadius: "2px" }}
+                    />
+                    <Stack direction="row" sx={{ justifyContent: "center", gap: "6px", mt: "6px" }}>
+                      <Typography component="span" sx={{ fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary }}>
+                        {downloadProgress.totalBytes
+                          ? `${formatBytes(downloadProgress.receivedBytes)} / ${formatBytes(downloadProgress.totalBytes)}`
+                          : `${formatBytes(downloadProgress.receivedBytes)} 已下载`}
+                      </Typography>
+                      <Typography component="span" sx={{ fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary }}>
+                        {downloadProgress.percent === undefined ? "下载中" : `${downloadProgress.percent}%`}
+                      </Typography>
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary, mt: "8px", textAlign: "center" }}>
+                    切换模型时自动下载缺失文件并重启
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+
+            {/* right: run status */}
+            <Box sx={{ border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "14px", p: "18px 20px", display: "flex", flexDirection: "column" }}>
+              <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", pb: "11px", borderBottom: `1px solid ${tokens.color.text.primary}`, mb: "14px" }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700 }}>运行状态</Typography>
+                <Typography component="span" sx={{ display: "flex", alignItems: "center", gap: "5px", fontSize: 10, fontWeight: 600, color: selectedIsRunning ? tokens.color.state.success : tokens.color.state.warning }}>
+                  <Box aria-hidden sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: selectedIsRunning ? tokens.color.state.success : tokens.color.state.warning }} />
+                  {selectedIsRunning ? "运行中" : running ? "待切换" : "未启用"}
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, mb: "2px" }}>{selectedProfileDetails?.label ?? "正在读取模型…"}</Typography>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mb: "14px" }}>
+                {selectedIsRunning
+                  ? runtimeStatus?.runtimeName ?? "应用托管 llama-server 正在运行"
+                  : selectedIsReady
+                    ? "模型文件已就绪，点击左侧按钮启用"
+                    : "首次启用会从 ModelScope 下载并校验模型文件"}
+              </Typography>
+              <Stack spacing="9px" sx={{ mb: "18px" }}>
+                <CheckChip ok={Boolean(runtimeStatus?.runtimeReady)} label={runtimeStatus?.runtimeReady ? "程序已安装" : "程序未安装"} />
+                <CheckChip ok={selectedIsReady} label={selectedIsReady ? "所选图文模型已就绪" : "所选图文模型未就绪"} />
+                <CheckChip ok={Boolean(health?.ok)} label={health?.ok ? "回复功能正常" : "回复未测试"} />
               </Stack>
-              <ActionRow
-                borderTop
-                label="更新 AI 能力"
-                description="下载所选模型权重，建议空闲时进行"
-                action={
-                  <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                    {runtimeStatus?.modelReady && (
-                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.state.success }}>已缓存</Typography>
-                    )}
-                    <Button variant="outlined" onClick={() => void download()} sx={actionButton}>下载模型</Button>
-                  </Stack>
-                }
-              />
-              <ActionRow
-                borderTop
-                label="修复 AI"
-                description="重新安装本地运行时，仅在自检出现异常时使用"
-                action={<Button variant="outlined" onClick={() => void prepareRuntime()} sx={actionButton}>修复</Button>}
-              />
-              <ActionRow
-                borderTop
-                label="保存本地配置"
-                description="保存当前模型与运行时设置"
-                action={<Button variant="outlined" onClick={() => void save()} sx={actionButton}>保存</Button>}
-              />
-              <ActionRow
-                borderTop
-                label="清理 AI 数据"
-                description="释放磁盘空间，清理后需重新下载才能使用"
-                labelColor={tokens.color.state.error}
-                action={
+              <Box sx={{ pb: "10px", borderBottom: `1px solid ${tokens.color.text.primary}`, mb: "2px" }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700 }}>常用操作</Typography>
+              </Box>
+              <Stack direction="row" sx={{ alignItems: "center", gap: "10px", p: "10px 2px", borderBottom: `1px solid ${tokens.color.border.hairline}` }}>
+                <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 600 }}>检查 AI 是否正常</Typography>
+                <Button
+                  variant="contained"
+                  onClick={test}
+                  disabled={checking}
+                  startIcon={checking ? (
+                    <span className="material-symbols-rounded ca-spin" aria-hidden="true" style={{ fontSize: 14 }}>progress_activity</span>
+                  ) : undefined}
+                  sx={{ ...actionButton, height: 28, minHeight: 28, px: "13px", fontSize: 11, borderRadius: "7px", "&.Mui-disabled": { color: tokens.color.text.onAccent, bgcolor: tokens.color.accent.main, opacity: 0.7 } }}
+                >
+                  {checking ? "检查中" : "检查"}
+                </Button>
+              </Stack>
+              <Stack direction="row" sx={{ alignItems: "center", gap: "10px", p: "10px 2px" }}>
+                <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{queuePaused ? "恢复自动回复" : "暂停自动回复"}</Typography>
+                <Button variant="outlined" onClick={() => void toggleAutoReply()} sx={{ ...actionButton, height: 28, minHeight: 28, px: "13px", fontSize: 11, borderRadius: "7px" }}>{queuePaused ? "恢复" : "暂停"}</Button>
+              </Stack>
+            </Box>
+          </Box>
+
+          {actionMessage && (
+            <Alert sx={{ mt: "14px" }} severity={actionMessage.includes("失败") ? "error" : "info"}>
+              {actionMessage}
+            </Alert>
+          )}
+
+          {/* advanced settings: full width below both panels (design). */}
+          <Box sx={{ border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "14px", mt: "14px", overflow: "hidden" }}>
+            <Button
+              variant="text"
+              aria-label="高级设置"
+              aria-expanded={advOpen}
+              aria-controls="local-model-advanced-settings"
+              onClick={() => setAdvOpen((open) => !open)}
+              fullWidth
+              sx={{ justifyContent: "flex-start", gap: 1, p: "13px 16px", borderRadius: 0, color: tokens.color.text.primary }}
+            >
+              <Typography sx={{ fontWeight: 700, fontSize: 12 }}>高级设置</Typography>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>通常无需改动</Typography>
+              <span
+                className="material-symbols-rounded" aria-hidden="true"
+                style={{ fontSize: 20, color: tokens.color.text.tertiary, marginLeft: "auto", transform: advOpen ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
+              >
+                expand_more
+              </span>
+            </Button>
+            <Collapse id="local-model-advanced-settings" in={advOpen}>
+              <Box sx={{ px: "16px" }}>
+                <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 0", borderTop: `1px solid ${tokens.color.border.hairline}` }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13 }}>所选模型来源</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>
+                      {selectedProfileDetails
+                        ? `ModelScope · ${selectedProfileDetails.model.baseModelId} · Apache-2.0`
+                        : "—"}
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 0", borderTop: `1px solid ${tokens.color.border.hairline}` }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13 }}>修复 AI</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>重新安装本地运行时，仅在自检出现异常时使用</Typography>
+                  </Box>
+                  <Button variant="outlined" onClick={() => void prepareRuntime()} sx={actionButton}>修复</Button>
+                </Stack>
+                <Stack direction="row" sx={{ alignItems: "center", gap: "14px", p: "11px 0 16px", borderTop: `1px solid ${tokens.color.border.hairline}` }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13, color: tokens.color.state.error }}>清理 AI 数据</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "1px" }}>释放磁盘空间，清理后需重新下载才能使用</Typography>
+                  </Box>
                   <Button
                     variant="outlined"
                     onClick={() => void deleteWeights()}
@@ -634,34 +695,10 @@ export const ModelSettings: React.FC = () => {
                   >
                     清理
                   </Button>
-                }
-              />
-            </Box>
-          </Collapse>
-
-          {actionMessage && (
-            <Alert sx={{ mt: 2 }} severity={actionMessage.includes("失败") ? "error" : "info"}>
-              {actionMessage}
-            </Alert>
-          )}
-          {downloadProgress && (
-            <Box sx={{ mt: 2 }}>
-              <Stack direction="row" sx={{ justifyContent: "space-between", mb: 0.75 }}>
-                <Typography variant="caption" color="text.secondary">
-                  {downloadProgress.totalBytes
-                    ? `${formatBytes(downloadProgress.receivedBytes)} / ${formatBytes(downloadProgress.totalBytes)}`
-                    : `${formatBytes(downloadProgress.receivedBytes)} 已下载`}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {downloadProgress.percent === undefined ? "下载中" : `${downloadProgress.percent}%`}
-                </Typography>
-              </Stack>
-              <LinearProgress
-                variant={downloadProgress.percent === undefined ? "indeterminate" : "determinate"}
-                value={downloadProgress.percent ?? 0}
-              />
-            </Box>
-          )}
+                </Stack>
+              </Box>
+            </Collapse>
+          </Box>
         </Box>
       ) : (
         <Box>
@@ -698,6 +735,7 @@ export const ModelSettings: React.FC = () => {
               <InputBase
                 type={showApiKey ? "text" : "password"}
                 value={apiKey}
+                placeholder={hasSavedApiKey ? "已保存；留空将保持不变" : "请输入服务商密钥"}
                 onChange={(event) => setApiKey(event.target.value)}
                 sx={fieldInput}
                 endAdornment={
@@ -766,25 +804,12 @@ export const ModelSettings: React.FC = () => {
   );
 };
 
-function runtimeFieldsForProfile(
-  profile: LocalModelProfile,
-  current: Partial<InferenceRuntimeConfig> = {},
-  options: { resetPaths?: boolean } = {},
-): Partial<InferenceRuntimeConfig> {
-  const mmproj = profile.auxiliaryModels?.find((model) => model.purpose === "mmproj");
-  const sameProfile = current.modelId === profile.model.url || current.modelId === profile.model.id;
-  const keepPaths = sameProfile && !options.resetPaths;
-  return {
-    runtimeKind: profile.runtime.runtimeKind,
-    modelId: profile.model.url,
-    modelPath: keepPaths ? current.modelPath ?? "" : "",
-    ...(mmproj ? {
-      mmprojModelId: mmproj.url,
-      mmprojPath: keepPaths && (current.mmprojModelId === mmproj.url || current.mmprojModelId === mmproj.id) ? current.mmprojPath ?? "" : "",
-    } : {}),
-  };
-}
-
+/**
+ * Checks whether an inference endpoint resolves to the local machine.
+ *
+ * @param baseUrl Endpoint URL.
+ * @returns Whether the endpoint is local or malformed.
+ */
 function isLocalInferenceEndpoint(baseUrl: string): boolean {
   try {
     const url = new URL(baseUrl);
@@ -794,13 +819,28 @@ function isLocalInferenceEndpoint(baseUrl: string): boolean {
   }
 }
 
+/**
+ * Formats model artifact sizes for the settings UI.
+ *
+ * @param value Byte count.
+ * @returns Human-readable KB, MB, or GB text.
+ */
 function formatBytes(value: number): string {
+  if (value >= 1024 * 1024 * 1024) {
+    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
   if (value < 1024 * 1024) {
     return `${(value / 1024).toFixed(1)} KB`;
   }
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * Totals the main GGUF and required auxiliary artifact sizes.
+ *
+ * @param profile Profile to total.
+ * @returns Known aggregate size when manifest metadata is complete.
+ */
 function profileDownloadSize(profile: LocalModelProfile | undefined): { totalBytes?: number } {
   const totalBytes =
     (profile?.model.sizeBytes ?? 0)
@@ -808,6 +848,13 @@ function profileDownloadSize(profile: LocalModelProfile | undefined): { totalByt
   return totalBytes > 0 ? { totalBytes } : {};
 }
 
+/**
+ * Aggregates progress for a main GGUF and its auxiliary downloads.
+ *
+ * @param byModel Latest progress keyed by model URL.
+ * @param expectedTotalBytes Manifest total when known.
+ * @returns Combined byte and percentage progress.
+ */
 function aggregateDownloadProgress(
   byModel: Record<string, { receivedBytes: number; totalBytes?: number }>,
   expectedTotalBytes?: number,

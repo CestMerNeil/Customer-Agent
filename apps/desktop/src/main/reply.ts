@@ -73,6 +73,13 @@ export type InboundHandlerChainOutcome =
   | { ok: true; handler: "immediate_system" | "keyword_handoff" | "intent_handoff" | "ai_agent"; action: "ignored" | "escalated" | "send"; reply?: GeneratedReply }
   | { ok: false; handler: "fallback"; error: string };
 
+/** Runs one inbound message through system, handoff, Agent, and real-send stages.
+ *
+ * @param request - The persisted inbound message to process.
+ * @param deps - Store and real external operations used by the handler chain.
+ * @returns The handler and action that completed, or a recoverable failure.
+ * @throws When the configured real PDD send operation rejects or reports failure.
+ */
 export async function runInboundHandlerChain(
   request: { context: MessageRecord },
   deps: InboundHandlerChainDeps,
@@ -104,7 +111,10 @@ export async function runInboundHandlerChain(
   if (!result.ok) {
     return { ok: false, handler: "fallback", error: result.error };
   }
-  await deps.sendReply?.(request.context, result.reply.text);
+  if (deps.sendReply) {
+    await deps.sendReply(request.context, result.reply.text);
+    await recordPddSendSuccess(request.context, deps.store);
+  }
   return { ok: true, handler: "ai_agent", action: "send", reply: result.reply };
 }
 
@@ -115,13 +125,14 @@ export async function generateAndPersistReply(
   request: GenerateReplyRequest,
   deps: GenerateReplyDeps,
 ): Promise<GenerateReplyOutcome> {
+  let auditQueue = Promise.resolve();
   try {
     const settings = await deps.store.getSettings();
     const client = await deps.createInferenceClient();
     const memory = await deps.store.getConversationMemory(memoryKey(request.context));
     const tools = createCustomerAgentTools(request.context, deps, settings.knowledge.topK);
     const onEvent = (event: ToolWorkflowEvent) => {
-      void persistAgentAuditEvent(request.context, event, deps.store);
+      auditQueue = auditQueue.then(() => persistAgentAuditEvent(request.context, event, deps.store));
     };
     const workflow = new ResponsesAgentWorkflow({
       invokeModel: (modelRequest) => client.respond(modelRequest),
@@ -129,9 +140,11 @@ export async function generateAndPersistReply(
       onEvent,
     });
     const reply = await workflow.generate({ ...request, ...(memory?.summary ? { memorySummary: memory.summary } : {}) });
+    await auditQueue;
     await updateConversationMemory(request.context, reply, memory, client, deps.store);
     return { ok: true, reply };
   } catch (error) {
+    await auditQueue;
     const message = error instanceof Error ? error.message : String(error);
     await appendDiagnostic(deps.store, "inference", "reply_generation_failure", {
       accountId: request.context.accountId,
@@ -228,18 +241,48 @@ async function persistAgentAuditEvent(
   }
 }
 
-function summarizeAuditEvent(event: ToolWorkflowEvent): string {
-  if (event.type === "tool_call") {
-    return truncateAuditText(`tool_call input=${JSON.stringify(event.input ?? {})}`);
+/** Persists proof only after the governed PDD text-send call has succeeded.
+ *
+ * @param context - The real inbound message whose reply was delivered.
+ * @param store - The local audit and diagnostic store used by evidence export.
+ * @returns A promise that resolves after persistence or a safe diagnostic fallback.
+ */
+export async function recordPddSendSuccess(
+  context: GenerateReplyRequest["context"],
+  store: Pick<SqliteAppStore, "appendAgentAudit" | "appendLog">,
+): Promise<void> {
+  try {
+    await store.appendAgentAudit({
+      shopId: context.shopId,
+      accountId: context.accountId,
+      buyerId: context.buyerId,
+      messageId: context.id,
+      eventType: "pdd_send_success",
+      ok: true,
+      summary: "Governed PDD text reply completed successfully.",
+      citations: [],
+    });
+  } catch (error) {
+    await appendDiagnostic(store, "pdd", "send_success_audit_persist_failure", {
+      accountId: context.accountId,
+      shopId: context.shopId,
+      messageId: context.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
-  if (event.type === "tool_result") {
-    return truncateAuditText(`tool_result ok=${event.result?.ok} content=${event.result?.content ?? ""} error=${event.result?.error ?? ""}`);
-  }
-  return truncateAuditText(event.content ?? event.type);
 }
 
-function truncateAuditText(value: string): string {
-  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, 500);
+function summarizeAuditEvent(event: ToolWorkflowEvent): string {
+  if (event.type === "tool_call") {
+    return `tool_call input_keys=${Object.keys(event.input ?? {}).sort().join(",") || "none"}`;
+  }
+  if (event.type === "tool_result") {
+    return `tool_result ok=${event.result?.ok === true} citations=${event.result?.citations?.length ?? 0} error=${Boolean(event.result?.error)}`;
+  }
+  if (event.type === "final") {
+    return `final response completed citations=${event.result?.citations?.length ?? 0}`;
+  }
+  return event.type;
 }
 
 async function updateConversationMemory(
@@ -507,7 +550,7 @@ function matchHandoffKeyword(content: string, keywords: string[], shopId: string
 }
 
 function effectiveHandoffKeywords(settings: AppSettings): string[] {
-  return settings.handoff?.keywords?.length ? settings.handoff.keywords : DEFAULT_HANDOFF_KEYWORDS;
+  return settings.handoff ? settings.handoff.keywords : DEFAULT_HANDOFF_KEYWORDS;
 }
 
 function matchIntentRule(

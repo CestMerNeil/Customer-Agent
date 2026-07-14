@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import initSqlJs from "sql.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SqliteAppStore } from "./sqlite-store.js";
 import type { MessageRecord } from "@customer-agent/core";
@@ -78,6 +79,110 @@ describe("SqliteAppStore", () => {
     await second.close();
   });
 
+  it("redacts account errors and new or legacy diagnostic logs at the storage boundary", async () => {
+    const dbPath = path.join(dir, "customer-agent.sqlite");
+    const first = await SqliteAppStore.open(dir);
+    const account = await first.upsertAccount({
+      channel: "pinduoduo",
+      username: "seller-a",
+      shopId: "shop-a",
+      userId: "user-a",
+      status: "error",
+      error: "cookie=session-secret buyer_phone=13800138000",
+    });
+    await first.appendLog("error", "cookie=log-secret buyer_phone=13800138000");
+    expect(account.error).not.toContain("session-secret");
+    expect(account.error).not.toContain("13800138000");
+    expect((await first.listLogs())[0]?.message).not.toContain("log-secret");
+    await first.close();
+
+    const SQL = await initSqlJs();
+    const legacyDb = new SQL.Database(await readFile(dbPath));
+    legacyDb.run(
+      "INSERT INTO logs(id, level, message, created_at) VALUES (?, ?, ?, ?)",
+      ["legacy-log", "error", "cookie=legacy-secret buyer_phone=13800138000", "2026-07-14T00:00:00.000Z"],
+    );
+    await writeFile(dbPath, Buffer.from(legacyDb.export()));
+    legacyDb.close();
+
+    const reopened = await SqliteAppStore.open(dir);
+    const logs = await reopened.listLogs({ limit: 10 });
+    expect(logs.map((log) => log.message).join("\n")).not.toContain("legacy-secret");
+    expect(logs.map((log) => log.message).join("\n")).not.toContain("13800138000");
+    await reopened.close();
+  });
+
+  it("coalesces concurrent writes, retains only the newest 5000 logs, and flushes on close", async () => {
+    const store = await SqliteAppStore.open(dir);
+    const pending = Array.from({ length: 5_005 }, (_, index) => store.appendLog("info", `log-${index}`));
+
+    await store.close();
+    await Promise.all(pending);
+
+    const reopened = await SqliteAppStore.open(dir);
+    const logs = await reopened.listLogs({ limit: 6_000 });
+    expect(logs).toHaveLength(5_000);
+    expect(logs.some((log) => log.message === "log-0")).toBe(false);
+    expect(logs.some((log) => log.message === "log-5004")).toBe(true);
+    await reopened.close();
+    expect((await readdir(dir)).some((name) => name.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("fails without replacing an unreadable database", async () => {
+    const dbPath = path.join(dir, "customer-agent.sqlite");
+    const corruptBytes = Buffer.from("not a sqlite database");
+    await writeFile(dbPath, corruptBytes);
+
+    await expect(SqliteAppStore.open(dir)).rejects.toThrow(/file was left unchanged/);
+    await expect(readFile(dbPath)).resolves.toEqual(corruptBytes);
+  });
+
+  it("removes raw payloads from new and legacy messages without deleting business fields", async () => {
+    const dbPath = path.join(dir, "customer-agent.sqlite");
+    const first = await SqliteAppStore.open(dir);
+    await first.upsertMessage(buildMessage({
+      id: "msg-raw",
+      raw: { token: "new-top-secret" },
+      goods: { goodsId: "goods-1", goodsName: "围巾", raw: { token: "new-goods-secret" } },
+      order: { orderId: "order-1", goodsName: "围巾", raw: { token: "new-order-secret" } },
+    }));
+    const storedNewMessage = await first.getMessage("msg-raw");
+    expect(storedNewMessage).toEqual(expect.objectContaining({
+      id: "msg-raw",
+      goods: { goodsId: "goods-1", goodsName: "围巾" },
+      order: { orderId: "order-1", goodsName: "围巾" },
+    }));
+    expect(storedNewMessage?.raw).toBeUndefined();
+    expect(storedNewMessage?.goods?.raw).toBeUndefined();
+    expect(storedNewMessage?.order?.raw).toBeUndefined();
+    await first.close();
+
+    const SQL = await initSqlJs();
+    const legacyDb = new SQL.Database(await readFile(dbPath));
+    const legacyMessage = {
+      ...buildMessage({ id: "msg-raw" }),
+      raw: { token: "legacy-top-secret" },
+      goods: { goodsId: "goods-1", goodsName: "围巾", raw: { token: "legacy-goods-secret" } },
+      order: { orderId: "order-1", goodsName: "围巾", raw: { token: "legacy-order-secret" } },
+    };
+    legacyDb.run("UPDATE messages SET payload = ? WHERE id = ?", [JSON.stringify(legacyMessage), legacyMessage.id]);
+    await writeFile(dbPath, Buffer.from(legacyDb.export()));
+    legacyDb.close();
+
+    const reopened = await SqliteAppStore.open(dir);
+    expect(await reopened.getMessage("msg-raw")).toEqual(expect.objectContaining({
+      id: "msg-raw",
+      content: "sanitized buyer text",
+      goods: { goodsId: "goods-1", goodsName: "围巾" },
+      order: { orderId: "order-1", goodsName: "围巾" },
+    }));
+    await reopened.close();
+    const persisted = (await readFile(dbPath)).toString("utf8");
+    expect(persisted).not.toContain("legacy-top-secret");
+    expect(persisted).not.toContain("legacy-goods-secret");
+    expect(persisted).not.toContain("legacy-order-secret");
+  });
+
   it("persists inbound queue items across store instances", async () => {
     const first = await SqliteAppStore.open(dir);
     const message = buildMessage({ id: "msg-persisted", buyerId: "buyer-a", receivedAt: "2026-06-24T10:00:00.000Z" });
@@ -96,6 +201,48 @@ describe("SqliteAppStore", () => {
       },
     ]);
     await second.close();
+  });
+
+  it("recovers interrupted processing items when reopening the database", async () => {
+    const dbPath = path.join(dir, "customer-agent.sqlite");
+    const first = await SqliteAppStore.open(dir);
+    const message = buildMessage({ id: "msg-interrupted", buyerId: "buyer-a" });
+    await first.upsertMessage(message);
+    await first.enqueueInboundMessage(message);
+    const [claimed] = await first.claimNextInboundMessages({ limit: 1, now: "2026-06-24T10:00:00.000Z" });
+    await first.close();
+
+    const recoveryStartedAt = new Date().toISOString();
+    const second = await SqliteAppStore.open(dir);
+    const recoveryFinishedAt = new Date().toISOString();
+    const [recovered] = await second.listInboundQueue();
+
+    expect(recovered).toMatchObject({
+      id: claimed!.id,
+      state: "retry_waiting",
+      attempts: 1,
+      lastError: "interrupted_by_previous_shutdown",
+    });
+    expect(recovered!.availableAt >= recoveryStartedAt).toBe(true);
+    expect(recovered!.availableAt <= recoveryFinishedAt).toBe(true);
+    expect(recovered!.updatedAt).toBe(recovered!.availableAt);
+    await second.close();
+
+    const SQL = await initSqlJs();
+    const persisted = new SQL.Database(await readFile(dbPath));
+    const result = persisted.exec(
+      "SELECT payload, state, attempts, available_at, updated_at FROM inbound_queue WHERE id = ?",
+      [claimed!.id],
+    )[0];
+    const [payload, state, attempts, availableAt, updatedAt] = result!.values[0]!;
+    expect(JSON.parse(String(payload))).toEqual(recovered);
+    expect({ state, attempts, availableAt, updatedAt }).toEqual({
+      state: recovered!.state,
+      attempts: recovered!.attempts,
+      availableAt: recovered!.availableAt,
+      updatedAt: recovered!.updatedAt,
+    });
+    persisted.close();
   });
 
   it("deduplicates inbound queue items by message identity", async () => {

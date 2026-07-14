@@ -40,7 +40,7 @@
 - [x] 5.3 Implement cookie/session health checks and safe refresh/relogin flow with concurrency guard and cooldown.
 - [x] 5.4 Classify network, PDD token, cookie, session expiry, account offline, risk-control, and manual relogin failures.
 - [x] 5.5 Surface connection state, reconnect count, heartbeat state, last error, and required operator action in the UI.
-- [x] 5.6 Verify connection recovery and relogin-required paths against real PDD.
+- [ ] 5.6 Verify connection recovery and relogin-required paths against real PDD.
 
 ## 6. Queue, Handler Chain, and Concurrency
 
@@ -78,7 +78,7 @@
 
 ## 8A. Local Model Runtime Provisioning
 
-- [x] 8A.1 Define approved local model profiles for chat and multimodal extraction, using Qwen2.5-VL 3B as the default local multimodal profile and Qwen2.5-VL 7B as the higher-quality option, recording exact model IDs, file sizes, checksums, licenses, and platform support.
+- [x] 8A.1 Define approved local model profiles for chat and multimodal extraction, with ModelScope-only Qwen3.5-4B lightweight, Qwen3.5-9B default, and Qwen3.6-35B-A3B high-end tiers, recording exact model IDs, file sizes, checksums, licenses, and platform support.
 - [x] 8A.2 Replace manual runtime-command setup with managed runtime provisioning from bundled resources or checksummed platform manifests.
 - [x] 8A.3 Replace manual model URL/path setup for the default profile with first-launch or first-use app-managed download, resume, checksum verification, cache reuse, and disk-space checks.
 - [x] 8A.4 Add runtime lifecycle governance for local process start/stop, health checks, port conflicts, model-load errors, and sanitized diagnostics.
@@ -86,10 +86,16 @@
 - [x] 8A.6 Ensure Agent, memory summarization, and embeddings can use the managed local Responses API-compatible endpoint when the selected local profile supports the required capability.
 - [x] 8A.7 Gate multimodal product extraction on an explicitly selected local model profile, or approved chain of local model profiles, that declares image support.
 - [x] 8A.8 Add macOS and Windows packaged smoke checks for local runtime provisioning and startup.
-- [x] 8A.9 Produce sanitized local-model acceptance records with runtime version, model manifest, platform, commit SHA, and health-check results.
+- [x] 8A.9 Add sanitized local-model acceptance record generation and validation for runtime version, model manifest, platform, commit SHA, and health-check results.
 - [x] 8A.10 Define the minimum Responses API-compatible runtime contract for local and remote providers, including tool definitions, tool calls, tool-result continuation, final response extraction, and multimodal input support.
-- [x] 8A.11 Spike local runtime candidates against the contract; reject or replace `llama-server` if it cannot satisfy required native Agent tool-call behavior without prompt-only JSON emulation.
-- [x] 8A.12 Record the chosen local runtime decision, rejected alternatives, supported capabilities, unsupported capabilities, packaging impact, and acceptance evidence in the runtime/model manifest.
+- [x] 8A.11 Validate the built-in/app-managed `llama-server` against the contract and block unsupported runtime/profile combinations instead of adding prompt-only JSON emulation.
+- [x] 8A.12 Record the app-managed `llama-server` decision, supported capabilities, unsupported capabilities, packaging impact, and acceptance evidence fields in the runtime/model manifest.
+- [x] 8A.13 Replace the release manifest with the three ModelScope-only multimodal tiers, separating each official Qwen base model ID from its locked-revision community GGUF and matching `mmproj` artifacts.
+- [x] 8A.14 Enforce allowlisted ModelScope provisioning, paired GGUF/`mmproj` downloads, checksum gates, and migration away from arbitrary URLs or local model paths.
+- [x] 8A.15 Update the model-selection UI and manifest/release validation for the three tiers, including the Qwen3.6-35B-A3B 35B-total/3B-active distinction and non-3B memory warning.
+- [ ] 8A.16 Complete fresh real chat, native tool-call, tool-result continuation, final-response, and vision acceptance for each of the three ModelScope profiles on the current commit and locked artifact revisions; v1.0.3 evidence is not reusable.
+- [ ] 8A.17 Complete fresh packaged macOS acceptance for managed download, checksum verification, `llama-server` launch, and real chat/tool/tool-result/vision behavior with the new profiles.
+- [ ] 8A.18 Complete fresh packaged Windows acceptance for managed download, checksum verification, `llama-server` launch, and real chat/tool/tool-result/vision behavior with the new profiles.
 
 ## 9. Human Handoff
 
@@ -135,7 +141,7 @@
 - [x] 13.2 Add a validator that fails when required fields are missing or sensitive fields are present.
 - [x] 13.3 Add release-blocking capability matrix for PDD, Agent, knowledge/product sync, handoff, queue/concurrency, multi-shop, UI, secrets, and packaging.
 - [x] 13.4 Generate default sanitized account aliases, shop aliases, test-run labels, acceptance skeletons, and capability-matrix rows without requiring the operator to provide low-sensitive naming data.
-- [x] 13.5 Record real acceptance for each release-blocking capability against the current implementation commit.
+- [ ] 13.5 Record real acceptance for each release-blocking capability against the current implementation commit.
 - [x] 13.6 Keep blocked capabilities incomplete when real login, real send authorization, a real buyer/test-message path, or required local model dependency is unavailable.
 
 ## 14. Release Automation
@@ -154,5 +160,18 @@
 - [x] 15.2 Run the full non-mock repository verification suite.
 - [x] 15.3 Confirm no active docs, scripts, CI jobs, or specs still name Mock Pinduoduo or Seam A/B/C as acceptance.
 - [x] 15.4 Compare final implementation against the reference README and audited must-scope code paths.
-- [x] 15.5 Complete final real PDD merchant acceptance on packaged macOS and Windows artifacts.
+- [ ] 15.5 Complete final real PDD merchant acceptance on packaged macOS and Windows artifacts.
 - [x] 15.6 Update release/readiness docs with the real acceptance summary and residual should/out-of-scope items.
+
+## 16. P0/P1 Runtime and Security Remediation
+
+- [x] 16.1 Contain PDD profiles and prevent traversal, root deletion, and sanitized-username collisions.
+- [x] 16.2 Bound reconnect attempts and cancel stale start/stop/reconnect work while disposing sockets, timers, and browser contexts.
+- [x] 16.3 Serialize and atomically replace SQL.js snapshots, bound diagnostic logs, fail closed on corruption, and remove raw payload copies from existing and new messages.
+- [x] 16.4 Remove cookies, API keys, local paths, and executable runtime fields from every renderer response and accept only reviewed identifiers for runtime/model IPC.
+- [x] 16.5 Restrict packaged renderer trust to the explicit entry URL and keep navigation/window creation denied outside the trusted origin.
+- [x] 16.6 Make health polling side-effect-free, single-flight model downloads, prevent overlapping renderer polls, and wait for local runtime termination.
+- [x] 16.7 Enforce single-instance execution, quit on last-window close, release background resources on quit, and bound product-sync history.
+- [x] 16.8 Remove tracked delegation to ignored assistant prompts and replace the local prompt-injection document with an auditable engineering guide.
+- [x] 16.9 Remove retired/failed model cache artifacts, strip historical raw message copies, and verify the real database remains integral.
+- [x] 16.10 Run targeted tests, local repository gates, strict OpenSpec validation, and a controlled desktop shutdown smoke.

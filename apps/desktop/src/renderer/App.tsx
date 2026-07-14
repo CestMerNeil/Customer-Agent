@@ -89,6 +89,7 @@ const views: readonly ViewState[] = [
     icon: "menu_book",
     section: "配置",
     caption: "全局与店铺知识的导入、同步与检索治理",
+    ownHeader: true,
     render: () => <KnowledgeBaseManager />,
   },
   {
@@ -98,6 +99,7 @@ const views: readonly ViewState[] = [
     icon: "smart_toy",
     section: "配置",
     caption: "选择由「本地 AI」还是「云端 AI」来生成客服回复",
+    ownHeader: true,
     render: () => <ModelSettings />,
   },
   {
@@ -107,6 +109,7 @@ const views: readonly ViewState[] = [
     icon: "verified",
     section: "系统",
     caption: "验收证据与 GitHub Release 门禁",
+    ownHeader: true,
     render: () => <ReleaseStatusPage />,
   },
   {

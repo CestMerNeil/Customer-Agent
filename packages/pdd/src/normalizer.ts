@@ -1,10 +1,18 @@
 import type { CustomerMessageType, CustomerServiceContext } from "@customer-agent/core";
 
+/** Account and shop identity attached to a normalized PDD message. */
 interface NormalizeOptions {
   accountId: string;
   shopId: string;
 }
 
+/**
+ * Converts a PDD websocket payload into the minimal persisted business context.
+ *
+ * @param payload Untrusted PDD websocket payload.
+ * @param options Account and shop identity for the active connection.
+ * @returns A normalized message without the original raw payload.
+ */
 export function normalizePddMessage(payload: Record<string, unknown>, options: NormalizeOptions): CustomerServiceContext {
   const messagePayload = asRecord(payload.message);
   const source = Object.keys(messagePayload).length > 0 ? messagePayload : payload;
@@ -26,11 +34,10 @@ export function normalizePddMessage(payload: Record<string, unknown>, options: N
     id: stringValue(source.msg_id ?? source.msgId ?? payload.msg_id ?? payload.msgId ?? crypto.randomUUID()),
     channel: "pinduoduo",
     type: messageType,
-    content: extractContent(messageType, source, payload),
+    content: extractContent(messageType, source, payload, goods, order),
     shopId: options.shopId,
     accountId: options.accountId,
     buyerId: stringValue(from.uid ?? from.user_id ?? source.buyer_id ?? payload.buyer_id ?? "unknown-buyer"),
-    raw: payload,
     receivedAt: new Date(timestampValue(source.time ?? source.ts ?? source.timestamp ?? payload.ts ?? payload.timestamp, Date.now())).toISOString(),
     ...(buyerNickname ? { buyerNickname } : {}),
     ...(goods ? { goods } : {}),
@@ -39,6 +46,12 @@ export function normalizePddMessage(payload: Record<string, unknown>, options: N
   return message;
 }
 
+/**
+ * Returns whether a normalized message should enter the inbound reply queue.
+ *
+ * @param message Normalized message type.
+ * @returns Whether the message represents buyer content that can receive a reply.
+ */
 export function isQueueablePddMessage(message: Pick<CustomerServiceContext, "type">): boolean {
   return [
     "text",
@@ -52,6 +65,13 @@ export function isQueueablePddMessage(message: Pick<CustomerServiceContext, "typ
   ].includes(message.type);
 }
 
+/**
+ * Maps PDD message identifiers onto the stable customer-message taxonomy.
+ *
+ * @param value PDD message type value.
+ * @param subType Optional PDD subtype used by type zero.
+ * @returns Normalized customer message type.
+ */
 function mapMessageType(value: unknown, subType?: unknown): CustomerMessageType {
   if (value === 0 && subType === 1) {
     return "order_info";
@@ -110,7 +130,23 @@ function mapMessageType(value: unknown, subType?: unknown): CustomerMessageType 
   return "system_status";
 }
 
-function extractContent(type: CustomerMessageType, payload: Record<string, unknown>, envelope: Record<string, unknown> = payload): string {
+/**
+ * Extracts only reply-relevant content instead of serializing the whole payload.
+ *
+ * @param type Normalized message type.
+ * @param payload Message-level PDD fields.
+ * @param envelope Outer websocket envelope.
+ * @param goods Minimal normalized goods context, when present.
+ * @param order Minimal normalized order context, when present.
+ * @returns Persistable message content.
+ */
+function extractContent(
+  type: CustomerMessageType,
+  payload: Record<string, unknown>,
+  envelope: Record<string, unknown> = payload,
+  goods?: CustomerServiceContext["goods"],
+  order?: CustomerServiceContext["order"],
+): string {
   const media = asRecord(payload.media);
   const content = payload.content ?? payload.text ?? payload.message ?? payload.msg ?? payload.body;
   if (typeof content === "string" && content.length > 0) {
@@ -139,9 +175,22 @@ function extractContent(type: CustomerMessageType, payload: Record<string, unkno
   if (typeof content === "string") {
     return content;
   }
-  return JSON.stringify(content ?? payload);
+  if (goods) {
+    return [goods.goodsName, goods.goodsSpec, goods.goodsId].filter(Boolean).join(" ") || "商品消息";
+  }
+  if (order) {
+    return [order.orderId, order.goodsName].filter(Boolean).join(" ") || "订单消息";
+  }
+  return `[${type}]`;
 }
 
+/**
+ * Extracts the allowlisted goods fields needed by reply generation.
+ *
+ * @param payload Message-level PDD fields.
+ * @param envelope Outer websocket envelope.
+ * @returns Minimal goods context, or `undefined` when absent.
+ */
 function extractGoodsContext(payload: Record<string, unknown>, envelope: Record<string, unknown> = payload): CustomerServiceContext["goods"] {
   const info = asRecord(payload.info);
   const data = asRecord(info.data);
@@ -164,13 +213,19 @@ function extractGoodsContext(payload: Record<string, unknown>, envelope: Record<
   if (goodsPrice) {
     context.goodsPrice = goodsPrice;
   }
-  context.raw = goods;
   if (spec) {
     context.goodsSpec = spec;
   }
   return context;
 }
 
+/**
+ * Extracts the allowlisted order fields needed by reply generation.
+ *
+ * @param payload Message-level PDD fields.
+ * @param envelope Outer websocket envelope.
+ * @returns Minimal order context, or `undefined` when absent.
+ */
 function extractOrderContext(payload: Record<string, unknown>, envelope: Record<string, unknown> = payload): CustomerServiceContext["order"] {
   const info = asRecord(payload.info);
   const order = asRecord(payload.order_info ?? payload.order ?? payload.orderInfo ?? info ?? envelope.order_info);
@@ -187,26 +242,57 @@ function extractOrderContext(payload: Record<string, unknown>, envelope: Record<
   if (goodsName) {
     context.goodsName = goodsName;
   }
-  context.raw = order;
   return context;
 }
 
+/**
+ * Narrows an unknown value to a plain record-like object.
+ *
+ * @param value Candidate value.
+ * @returns The object value or an empty record.
+ */
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
+/**
+ * Converts string and numeric identifiers to text.
+ *
+ * @param value Candidate identifier.
+ * @returns Text value or an empty string.
+ */
 function stringValue(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
+/**
+ * Returns a string only when the input is already textual.
+ *
+ * @param value Candidate value.
+ * @returns Text value or `undefined`.
+ */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Returns a numeric value with a fallback.
+ *
+ * @param value Candidate number.
+ * @param fallback Value used for non-numeric input.
+ * @returns Numeric input or the fallback.
+ */
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === "number" ? value : fallback;
 }
 
+/**
+ * Normalizes second- or millisecond-based timestamps to milliseconds.
+ *
+ * @param value Candidate timestamp.
+ * @param fallback Millisecond timestamp used for invalid input.
+ * @returns Timestamp in milliseconds.
+ */
 function timestampValue(value: unknown, fallback: number): number {
   const numeric = numberValue(value, fallback);
   return numeric > 0 && numeric < 10_000_000_000 ? numeric * 1000 : numeric;

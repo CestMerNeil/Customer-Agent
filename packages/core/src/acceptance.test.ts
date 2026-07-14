@@ -99,6 +99,27 @@ describe("acceptance evidence", () => {
     expect(result.errors).toContain("pdd-real-merchant-operations is missing passing evidence for pdd-account-a/shop-a");
   });
 
+  it("rejects generated-only pass records until an operator approves them", () => {
+    const records = buildDefaultAcceptanceSkeleton({
+      commitSha: "81bf519",
+      platform: "darwin-arm64",
+    }).map((record) => ({
+      ...record,
+      outcome: "pass" as const,
+      actor: "generated" as const,
+      evidenceSummary: "Machine-observed candidate evidence.",
+    }));
+
+    const result = validateAcceptanceRecordSet({
+      commitSha: "81bf519",
+      platform: "darwin-arm64",
+      records,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pdd-real-merchant-operations is missing passing evidence for pdd-account-a/shop-a");
+  });
+
   it("resolves a single accepted implementation commit from release-scoped evidence", () => {
     const records = buildDefaultAcceptanceSkeleton({
       commitSha: "accepted-commit",

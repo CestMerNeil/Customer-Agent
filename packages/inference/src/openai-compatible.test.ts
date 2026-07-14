@@ -23,6 +23,7 @@ describe("OpenAICompatibleClient", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining("\"model\":\"qwen\""),
+        signal: expect.any(AbortSignal),
       }),
     );
   });
@@ -131,6 +132,7 @@ describe("OpenAICompatibleClient", () => {
     })).resolves.toBe("{\"brand\":\"云织\"}");
 
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(body).toMatchObject({
       model: "gemma-vision",
       response_format: { type: "json_object" },
@@ -190,6 +192,7 @@ describe("OpenAICompatibleClient", () => {
     });
 
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(body).toMatchObject({
       model: "gemma",
       tool_choice: "auto",
@@ -257,6 +260,55 @@ describe("OpenAICompatibleClient", () => {
       expect.objectContaining({ role: "assistant", tool_calls: expect.any(Array) }),
       { role: "tool", tool_call_id: "call-1", content: "{\"ok\":true}" },
     ]));
+  });
+
+  it("times out regular inference requests with a safe finite error", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => (
+        new Promise<Response>(() => undefined)
+      ));
+      const client = new OpenAICompatibleClient(
+        {
+          baseUrl: "http://localhost:8000/v1",
+          chatModel: "gemma",
+          requestTimeoutMs: 100,
+        },
+        fetchMock,
+      );
+
+      const assertion = expect(client.chat("请回答")).rejects.toThrow("推理请求超时");
+      await vi.advanceTimersByTimeAsync(100);
+      await assertion;
+      expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("supports caller abort for multimodal and tool requests without leaking abort reasons", async () => {
+    const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+    const client = new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma" },
+      fetchMock,
+    );
+    const multimodalAbort = new AbortController();
+    const multimodal = client.chatMultimodal(
+      { system: "提取", text: "商品" },
+      { signal: multimodalAbort.signal },
+    );
+    multimodalAbort.abort(new Error("apiKey=must-not-leak"));
+    await expect(multimodal).rejects.toThrow("推理请求已取消");
+    await expect(multimodal).rejects.not.toThrow("must-not-leak");
+
+    const responseAbort = new AbortController();
+    const response = client.respond(
+      { instructions: "客服", input: "你好", tools: [] },
+      { signal: responseAbort.signal },
+    );
+    responseAbort.abort(new Error("token=must-not-leak"));
+    await expect(response).rejects.toThrow("推理请求已取消");
+    await expect(response).rejects.not.toThrow("must-not-leak");
   });
 
 });

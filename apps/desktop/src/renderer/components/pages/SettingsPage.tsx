@@ -76,8 +76,6 @@ export const SettingsPage: React.FC = () => {
     setMessage("日志已导出到本地文件");
   };
 
-  const recentLogs = (logs.data?.logs ?? []).slice(0, 8);
-
   return (
     <Box sx={{ maxWidth: 720 }}>
       {/* 营业时间 */}
@@ -113,78 +111,39 @@ export const SettingsPage: React.FC = () => {
         ))}
       </Stack>
 
-      {/* 运行日志 */}
-      <Box sx={{ ...sectionHeader, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <Typography sx={sectionTitle}>运行日志</Typography>
-        <Button
-          variant="outlined"
-          onClick={exportLogs}
-          sx={{ height: 28, minHeight: 28, px: "12px", fontSize: 11, fontWeight: 600, borderRadius: "8px" }}
-        >
-          导出
-        </Button>
-      </Box>
-      <Box sx={{ border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "12px", overflow: "hidden", mb: "26px" }}>
-        {recentLogs.length === 0 && (
-          <Typography sx={{ p: "12px 14px", fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary }}>
-            {logs.loading ? "正在读取日志…" : "暂无运行日志"}
-          </Typography>
-        )}
-        {recentLogs.map((log, index) => (
-          <Box
-            key={log.id}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: "14px",
-              p: "10px 14px",
-              borderBottom: index === recentLogs.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
-            }}
-          >
-            <Typography sx={{ fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, width: 110, flex: "none" }}>
-              {formatLogTime(log.createdAt)}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: ".1em",
-                width: 44,
-                flex: "none",
-                color:
-                  log.level === "error"
-                    ? tokens.color.state.error
-                    : log.level === "warning"
-                      ? tokens.color.state.warning
-                      : tokens.color.state.success,
-              }}
-            >
-              {log.level === "warning" ? "WARN" : log.level.toUpperCase()}
-            </Typography>
-            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>
-              {sanitizeDiagnosticText(log.message)}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-
-      {/* 本地数据 */}
+      {/* 本地数据（含运行日志下载，per design：不再展示日志列表） */}
       <Box sx={sectionHeader}>
         <Typography sx={sectionTitle}>本地数据</Typography>
       </Box>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          border: `1px solid ${tokens.color.border.hairline}`,
-          borderRadius: "12px",
-          p: "14px 16px",
-          mb: "26px",
-        }}
-      >
-        <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>数据目录</Typography>
-        <Typography sx={{ fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500 }}>{DATA_DIR}</Typography>
+      <Box sx={{ border: `1px solid ${tokens.color.border.hairline}`, borderRadius: "12px", mb: "26px", overflow: "hidden" }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            p: "14px 16px",
+            borderBottom: `1px solid ${tokens.color.border.hairline}`,
+          }}
+        >
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>数据目录</Typography>
+          <Typography sx={{ fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500 }}>{DATA_DIR}</Typography>
+        </Box>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", p: "14px 16px" }}>
+          <Box>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>运行日志</Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "2px" }}>
+              用于排查问题时提供给技术支持，无需自行查看
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            onClick={exportLogs}
+            startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>download</span>}
+            sx={{ height: 32, minHeight: 32, px: "12px", fontSize: 11, fontWeight: 600, borderRadius: "8px" }}
+          >
+            下载日志
+          </Button>
+        </Box>
       </Box>
 
       {/* 系统版本 */}
@@ -256,16 +215,6 @@ export const SettingsPage: React.FC = () => {
     </Box>
   );
 };
-
-function formatLogTime(value: string): string {
-  const date = new Date(value);
-  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  return `${time}.${String(date.getMilliseconds()).padStart(3, "0")}`;
-}
-
-function sanitizeDiagnosticText(value: string): string {
-  return value.replace(/^诊断\[[^\]]+\]\s*/u, "").replace(/\b(error|message)=/g, "").replace(/\s+/g, " ").trim();
-}
 
 function formatUpdateStatus(status: AppUpdateStatus): string {
   switch (status.state) {

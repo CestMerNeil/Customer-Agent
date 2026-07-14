@@ -52,25 +52,27 @@ Alternative considered: current single RAG prompt. Rejected because it cannot se
 
 ### 5. Preserve local LLM as a product advantage through a Responses API runtime contract
 
-The current Electron app has experimented with a local `llama-server` runtime, app-managed model files, and inference settings. This capability must be preserved as a product advantage, but `llama-server` is not the architecture boundary. The architecture boundary is a Responses API-compatible model contract exposed by every **ModelProvider**.
+The current Electron app has an app-managed `llama-server`, model files, and inference settings. This runtime remains the supported local implementation, while the architecture boundary is a Responses API-compatible model contract exposed by every **ModelProvider**.
 
 A **ModelProvider** is the supplier of models behind that unified contract (chat, embedding, and multimodal/vision). It is one of exactly two kinds, and both expose the same interface so the Agent never branches on which one is active: a `remote` provider is any OpenAI-compatible cloud endpoint (for example DashScope/Qwen), configured by base URL, API key, and model names; a `local` provider is an app-managed `llama-server` that the app provisions and runs itself. The only difference between the two is provisioning — a local provider additionally has a managed runtime (download, launch, health) — not the request/response surface.
 
 The target state is not "the user installs a separate LLM tool" and not "the Agent parses model-authored JSON from plain text." The target state is that the app can provision a reviewed platform runtime and model itself, verify integrity, start a local endpoint, and expose health/recovery states while the Agent talks to every ModelProvider through the same Responses-style interface: input messages, tool definitions, function/tool calls, function/tool outputs, multimodal inputs where supported, and final responses.
 
-If the selected local runtime cannot natively satisfy the required Responses API behavior, including tool-call round trips needed by the Agent, the implementation SHALL replace that runtime candidate instead of adding fragile prompt-only, text-JSON, or model-specific compatibility layers inside the Agent.
+If the selected `llama-server` version and model profile cannot natively satisfy the required Responses API behavior, including tool-call round trips needed by the Agent, that combination remains blocked until the app-managed runtime is updated and passes real acceptance. The implementation must not hide the gap behind prompt-only, text-JSON, or model-specific compatibility layers inside the Agent.
 
 Alternative considered: require users to install Ollama, LM Studio, llama.cpp, or another model tool before using the app. Rejected because it keeps the largest product differentiator dependent on manual setup and creates support variance across macOS and Windows.
 
 Alternative considered: bundle every runtime and default model inside the installer. Partially accepted only where licensing, size, and distribution limits make sense. The default design is first-launch or first-use automatic download from a checksummed manifest, because quantized local models can make installers very large.
 
-Alternative considered: keep `llama-server` as mandatory and hide missing Responses behavior behind an adapter that asks the model to emit JSON tool calls in natural-language completions. Rejected because real testing showed this makes Agent decisions brittle, allows product-recommendation turns to skip product tools, and diverges from the reference Agent's standard tool-call loop.
+Alternative considered: allow a user-installed runtime or hide missing `llama-server` behavior behind an adapter that asks the model to emit JSON tool calls in natural-language completions. Rejected because it reintroduces setup variance and makes Agent decisions brittle. The app-managed `llama-server` remains mandatory for local profiles, and unsupported profiles remain blocked rather than emulated.
 
 ### 6. Knowledge is versioned and governed
 
 Product knowledge and customer-service knowledge remain separate logical stores. Product knowledge comes from real PDD product APIs plus multimodal LLM extraction; customer-service knowledge comes from merchant authoring and imports. Both need source, version, review state, enabled state, rollback, conflict/staleness detection, and citation IDs used by Agent replies.
 
-Local model profiles must declare supported capabilities. Chat can be satisfied by the managed local profile where the selected model supports it. Multimodal product extraction must use one approved local model profile that declares image capability. The release baseline is Qwen2.5-VL 3B as the default local multimodal profile with Qwen2.5-VL 7B as the higher-quality option, including exact model IDs, licenses, checksums, and platform viability in the model-profile manifest. If the selected local model lacks vision support, the UI must block extraction until the operator selects or provisions an approved local multimodal profile. Remote multimodal fallback is not provided.
+Local model profiles must declare supported capabilities. The release catalog is ModelScope-only and contains exactly three multimodal tiers whose official base IDs are `Qwen/Qwen3.5-4B` lightweight, `Qwen/Qwen3.5-9B` default, and `Qwen/Qwen3.6-35B-A3B` high-end. For each tier, the manifest separately records that official base and the community conversion actually consumed by `llama-server`: `unsloth/Qwen3.5-4B-GGUF` at revision `167b4afc359863325cb4164418c715421b4e9118`, `unsloth/Qwen3.5-9B-GGUF` at `ae90f0d1c1be2b9250b0ef68265615f6fe3c777b`, and `unsloth/Qwen3.6-35B-A3B-GGUF` at `a2a9fd3585d658243e64acd133f247980392f82b`. Each entry locks the main GGUF and matching `mmproj` filenames, sizes, and checksums. Product UI selects only these reviewed profiles; it does not accept arbitrary URLs or local paths. Remote multimodal fallback is not provided.
+
+Qwen3.6-35B-A3B has 35B total parameters and activates about 3B per token. The lower active count reduces compute, but all quantized weights, the vision projector, context/KV state, and runtime buffers still require storage and memory; the UI and manifest must not present it as a 3B-memory model.
 
 Alternative considered: continue with flat document chunks. Rejected because product recommendation and policy answers need reviewable source lineage.
 
@@ -96,12 +98,18 @@ Alternative considered: require signing/notarization before the first release. R
 
 For PDD capabilities whose account permission or endpoint behavior is unknown, implementation SHALL first compare the reference project and then run sanitized live calibration against the user's real accounts. If the real account or endpoint cannot support a capability, the capability remains blocked or conditionally documented; it is not completed through mocks or invented payloads.
 
+### 11. Desktop resources and privileged data have one owner
+
+The Electron main process owns PDD profiles, decrypted credentials, local model commands, database persistence, background timers, browser contexts, and child processes. Renderer IPC returns only sanitized operational data and accepts only reviewed model identifiers, never executable commands or persisted secrets. Health polling is observational and cannot provision models or start runtimes. Account stop, window close, app quit, and replacement starts cancel stale work and release owned resources.
+
+SQLite snapshots are serialized, atomically replaced, and diagnostic logs are bounded. Normalized messages exclude raw PDD payload copies, including migration of existing rows. Model downloads use one in-flight operation per artifact, and retired or failed cache artifacts can be removed without deleting account profiles, business messages, or acceptance evidence.
+
 ## Risks / Trade-offs
 
 - [Risk] PDD private endpoints drift or require browser-only anti-bot state -> Mitigation: add live calibration tasks, schema summaries, and release-blocking acceptance records.
 - [Risk] Removing mocks slows inner-loop debugging -> Mitigation: keep pure unit tests and local deterministic state-machine tests, but forbid business-critical doubles and mock verdicts.
 - [Risk] Local runtime/model packaging increases first-run time -> Mitigation: support checksummed manifests, resumable background downloads, disk-space checks, and optional bundled runtime resources by release channel.
-- [Risk] Local model licensing or platform acceleration differs across macOS and Windows -> Mitigation: require license metadata, platform-specific runtime manifests, CPU-safe defaults, and explicit GPU/Metal/CUDA capability declarations.
+- [Risk] Local model licensing, community GGUF revisions, or platform acceleration differs across macOS and Windows -> Mitigation: distinguish official base provenance from the runtime artifact, pin ModelScope revisions and checksums, and require platform-specific packaged acceptance.
 - [Risk] Real acceptance depends on a buyer/test-message path -> Mitigation: mark affected tasks blocked until a real path exists; do not downgrade to mock completion.
 - [Risk] Multimodal product extraction can hallucinate -> Mitigation: require review state, citations to product source/version, confidence/status, disable, and rollback before Agent use.
 - [Risk] Multi-shop mistakes can cause wrong replies -> Mitigation: enforce shop-scoped data access, UI context, queue keys, and acceptance records.
@@ -114,7 +122,7 @@ For PDD capabilities whose account permission or endpoint behavior is unknown, i
 3. Add real PDD calibration scripts and sanitized evidence schema.
 4. Implement and verify PDD HTTP/WebSocket live operations before Agent, queue, and UI rely on them.
 5. Define and validate the Responses API-compatible model runtime contract before further Agent parity work.
-6. Evaluate local runtime candidates against the contract; replace `llama-server` if it cannot satisfy the required native tool-call, tool-result, and multimodal behavior.
+6. Keep the built-in/app-managed `llama-server`, provision only the three reviewed ModelScope profiles, and block any runtime/profile combination that fails native tool-call, tool-result, or multimodal acceptance.
 7. Rebuild the Agent loop to match the reference architecture on top of the Responses contract, with real tools and product-list context rather than prompt-only JSON parsing.
 8. Implement persistent queue/concurrency and Agent tools behind typed service interfaces.
 9. Add product/customer-service knowledge governance and product sync.
@@ -128,5 +136,6 @@ Rollback strategy: each stage should keep the app launchable. If a live PDD feat
 
 - Acceptance will use two real Pinduoduo accounts supplied by the user. The implementation SHALL generate low-sensitive aliases, shop aliases, acceptance skeletons, capability matrices, and test-run labels itself, using defaults such as `pdd-account-a`, `pdd-account-b`, `shop-a`, and `shop-b` unless the operator overrides them locally.
 - Real credentials, real login completion, and authorization to send messages or goods cards cannot be generated. They are provided only through the local app or calibration flow and are never requested in chat, committed to Git, or sent to CI.
-- The local model baseline is Qwen2.5-VL 3B with first-use automatic download. The v1.0.3 release readiness record ties packaged smoke evidence, local runtime contract evidence, and sanitized acceptance records to the selected managed `llama-server` runtime without fragile prompt-only tool emulation.
+- The local model baseline is the ModelScope-only Qwen3.5-4B / Qwen3.5-9B / Qwen3.6-35B-A3B catalog with Qwen3.5-9B as default and first-use automatic download through the app-managed `llama-server` path.
+- The new catalog requires fresh real chat, tool-call, tool-result, final-response, and vision acceptance plus packaged macOS and Windows acceptance. The v1.0.3 release readiness record predates these artifact revisions and cannot be reused.
 - GitHub Releases are the production distribution channel for this change. Code signing, notarization, and signed auto-update credentials are deferred.

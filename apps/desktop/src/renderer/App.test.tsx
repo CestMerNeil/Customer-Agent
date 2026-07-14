@@ -103,7 +103,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("option", { name: "发布" }));
 
-    expect(screen.getByRole("heading", { name: "发布" })).toBeInTheDocument();
+    // Per design the release page has no in-content heading; the topbar carries the title.
+    expect(screen.getByText("发布", { selector: "header *" })).toBeInTheDocument();
     expect(await screen.findByText("门禁未通过")).toBeInTheDocument();
     expect(await screen.findByText(/commit test-co/)).toBeInTheDocument();
   });

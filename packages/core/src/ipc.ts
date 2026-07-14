@@ -2,7 +2,7 @@ import type { CustomerServiceContext } from "./context.js";
 import type { AcceptanceCapabilityMatrixRow } from "./acceptance.js";
 import type { DependencySnapshot } from "./dependency-governance.js";
 import type {
-  AccountRecord,
+  RendererAccountRecord,
   AccountStatus,
   AgentAuditRecord,
   AppSettings,
@@ -11,7 +11,8 @@ import type {
   InboundQueueMetrics,
   InboundQueueRecord,
   InferenceConfig,
-  InferenceRuntimeConfig,
+  RendererAppSettings,
+  RendererInferenceConfig,
   LogLevel,
   LogRecord,
   MessageRecord,
@@ -110,7 +111,7 @@ export interface IpcContract {
   };
   "account.list": {
     request: undefined;
-    response: { accounts: AccountRecord[] };
+    response: { accounts: RendererAccountRecord[] };
   };
   "account.start": {
     request: { accountId: string };
@@ -202,14 +203,14 @@ export interface IpcContract {
     };
     response: { ok: boolean; created: number; skippedDuplicates: number; failed: number; error?: string };
   };
-  // LLM-wiki ingestion: pick a document, then have the model distil it into
-  // reviewable governed entries (replaces blind chunk+embedding import).
+  // LLM-wiki ingestion keeps selected paths in Electron main and exposes only
+  // one-time opaque handles while the model distils reviewable entries.
   "knowledge.document.pick": {
     request: undefined;
-    response: { ok: boolean; filePath?: string; fileName?: string; canceled?: boolean; error?: string };
+    response: { ok: boolean; documentId?: string; basename?: string; canceled?: boolean; error?: string };
   };
   "knowledge.document.import": {
-    request: { shopId: string; filePath: string; requestId: string };
+    request: { shopId: string; documentId: string; requestId: string };
     response: {
       ok: boolean;
       fileName?: string;
@@ -239,7 +240,7 @@ export interface IpcContract {
   };
   "inference.config.get": {
     request: undefined;
-    response: { config?: InferenceConfig };
+    response: { config?: RendererInferenceConfig };
   };
   "inference.config.save": {
     request: InferenceConfig;
@@ -263,11 +264,9 @@ export interface IpcContract {
       runtimeName?: string;
       host?: string;
       port?: number;
-      modelPath?: string;
       modelId?: string;
       modelReady?: boolean;
       runtimeReady?: boolean;
-      runtimeCommand?: string;
       runtimeError?: string;
     };
   };
@@ -277,10 +276,10 @@ export interface IpcContract {
   };
   "inference.runtime.prepare": {
     request: undefined;
-    response: { ok: boolean; runtimeCommand?: string; error?: string; source?: string };
+    response: { ok: boolean; error?: string };
   };
   "inference.runtime.start": {
-    request: Partial<InferenceRuntimeConfig> & { requestId?: string };
+    request: { modelId?: string; requestId?: string } | undefined;
     response: {
       ok: boolean;
       error?: string;
@@ -295,8 +294,8 @@ export interface IpcContract {
     response: { ok: boolean; running: boolean; error?: string };
   };
   "inference.modelscope.download": {
-    request: { modelId: string; expectedSha256?: string; requestId?: string };
-    response: { ok: boolean; modelPath: string; mmprojPath?: string; error?: string };
+    request: { modelId: string; requestId?: string };
+    response: { ok: boolean; ready: boolean; error?: string };
   };
   "inference.model.delete": {
     request: { modelId: string; auxiliaryModelIds?: string[] };
@@ -304,11 +303,11 @@ export interface IpcContract {
   };
   "settings.get": {
     request: undefined;
-    response: { settings: AppSettings };
+    response: { settings: RendererAppSettings };
   };
   "settings.save": {
     request: Partial<AppSettings>;
-    response: { ok: boolean; settings: AppSettings; error?: string };
+    response: { ok: boolean; settings: RendererAppSettings; error?: string };
   };
   "queue.list": {
     request: { shopId?: string; state?: InboundQueueRecord["state"] } | undefined;
@@ -316,11 +315,11 @@ export interface IpcContract {
   };
   "queue.pause": {
     request: undefined;
-    response: { ok: boolean; settings: AppSettings };
+    response: { ok: boolean; settings: RendererAppSettings };
   };
   "queue.resume": {
     request: undefined;
-    response: { ok: boolean; settings: AppSettings };
+    response: { ok: boolean; settings: RendererAppSettings };
   };
   "queue.retryDeadLetters": {
     request: { ids?: string[]; shopId?: string; limit?: number } | undefined;

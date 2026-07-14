@@ -16,6 +16,7 @@ packages/*/dist/
 coverage/
 report/
 .vite/
+.pnpm-store/
 apps/*/node_modules/.vite/
 packages/*/node_modules/.vite/
 

@@ -1,11 +1,14 @@
+/** Connection and generation settings for an OpenAI-compatible endpoint. */
 export interface InferenceConfig {
   baseUrl: string;
   apiKey?: string;
   chatModel: string;
   temperature?: number;
   maxTokens?: number;
+  requestTimeoutMs?: number;
 }
 
+/** Text, image, and response-format inputs for a multimodal completion. */
 export interface MultimodalChatRequest {
   system: string;
   text: string;
@@ -13,6 +16,7 @@ export interface MultimodalChatRequest {
   responseFormat?: "json_object";
 }
 
+/** Function tool schema accepted by chat-completions servers. */
 export interface ResponseToolDefinition {
   type: "function";
   name: string;
@@ -20,12 +24,14 @@ export interface ResponseToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+/** Tool result supplied when continuing a model tool-call loop. */
 export interface ResponseToolOutput {
   type: "function_call_output";
   call_id: string;
   output: string;
 }
 
+/** Agent-style model request represented through chat completions. */
 export interface ResponseModelRequest {
   instructions: string;
   input: string | ResponseToolOutput[];
@@ -33,6 +39,7 @@ export interface ResponseModelRequest {
   previousResponseId?: string;
 }
 
+/** Normalized function call returned by the model. */
 export interface ResponseModelToolCall {
   id?: string;
   callId: string;
@@ -40,49 +47,73 @@ export interface ResponseModelToolCall {
   arguments: Record<string, unknown>;
 }
 
+/** Normalized text and tool calls returned from an agent-style request. */
 export interface ResponseModelResult {
   responseId?: string;
   outputText?: string;
   toolCalls: ResponseModelToolCall[];
 }
 
+/** Fetch-compatible transport accepted for dependency injection. */
 type FetchLike = typeof fetch;
 
-// 探活只需确认端点能应答，不通的地址不应拖到操作系统 TCP 超时（约 75 秒）。
+/** Short deadline for endpoint reachability probes. */
 const HEALTH_CHECK_TIMEOUT_MS = 8_000;
 
+/** Lenient finite default for normal local or remote model generation. */
+const DEFAULT_INFERENCE_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
+/** Calls an OpenAI-compatible chat-completions endpoint with bounded I/O. */
 export class OpenAICompatibleClient {
   private readonly responseConversations = new Map<string, ChatMessage[]>();
 
+  /**
+   * Creates a client for one OpenAI-compatible model endpoint.
+   *
+   * @param config Endpoint, model, generation, and timeout settings.
+   * @param fetchImpl Optional fetch-compatible transport.
+   */
   constructor(
     private readonly config: InferenceConfig,
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
+  /**
+   * Runs a bounded real chat completion as a thorough health check.
+   *
+   * @returns A promise that resolves when the model responds successfully.
+   * @throws If configuration, connectivity, HTTP status, or completion output is invalid.
+   */
   async healthCheck(): Promise<void> {
     this.assertConfigured();
-    try {
-      await this.chat("请回复 OK", { signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS) });
-    } catch (error) {
-      throw mapTimeout(error);
-    }
+    await this.completeChat({
+      messages: [
+        { role: "system", content: "你是电商客服助手，只能基于给定资料礼貌回答。" },
+        { role: "user", content: "请回复 OK" },
+      ],
+      timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
+      requestLabel: "连接",
+    });
   }
 
-  /** Cheap reachability/auth probe (GET /models) for polling; unlike healthCheck it
-   * does not run a real completion, so it returns in milliseconds and costs nothing. */
+  /**
+   * Probes GET /models without running a completion.
+   *
+   * @returns A promise that resolves when the endpoint is reachable and authorized.
+   * @throws If configuration, connectivity, or HTTP status is invalid.
+   */
   async quickCheck(): Promise<void> {
     this.assertConfigured();
-    try {
+    await withRequestDeadline(async (signal) => {
       const response = await this.fetchImpl(`${this.baseUrl}/models`, {
         headers: this.headers,
-        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+        signal,
       });
       await assertOk(response);
-    } catch (error) {
-      throw mapTimeout(error);
-    }
+    }, undefined, HEALTH_CHECK_TIMEOUT_MS, "连接");
   }
 
+  /** Validates the endpoint and model identifiers needed by health probes. */
   private assertConfigured(): void {
     if (!this.config.baseUrl.trim()) {
       throw new Error("OpenAI compatible endpoint 未配置 baseUrl");
@@ -92,6 +123,14 @@ export class OpenAICompatibleClient {
     }
   }
 
+  /**
+   * Generates one text-only customer-service reply.
+   *
+   * @param prompt User prompt sent to the model.
+   * @param options Optional caller cancellation signal.
+   * @returns Generated response text.
+   * @throws If the request is cancelled, times out, fails, or returns no text.
+   */
   async chat(prompt: string, options?: { signal?: AbortSignal }): Promise<string> {
     return this.completeChat({
       messages: [
@@ -99,10 +138,23 @@ export class OpenAICompatibleClient {
         { role: "user", content: prompt },
       ],
       ...(options?.signal ? { signal: options.signal } : {}),
+      timeoutMs: this.requestTimeoutMs,
+      requestLabel: "推理请求",
     });
   }
 
-  async chatMultimodal(request: MultimodalChatRequest): Promise<string> {
+  /**
+   * Generates one text-and-image completion.
+   *
+   * @param request Multimodal input and optional response format.
+   * @param options Optional caller cancellation signal.
+   * @returns Generated response text.
+   * @throws If the request is cancelled, times out, fails, or returns no text.
+   */
+  async chatMultimodal(
+    request: MultimodalChatRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<string> {
     const userContent: Array<ChatContentPart | { type: "image_url"; image_url: { url: string } }> = [
       { type: "text", text: request.text },
       ...request.imageUrls?.filter((url) => url.trim()).map((url) => ({
@@ -116,26 +168,43 @@ export class OpenAICompatibleClient {
         { role: "user", content: userContent },
       ],
       ...(request.responseFormat ? { responseFormat: request.responseFormat } : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+      timeoutMs: this.requestTimeoutMs,
+      requestLabel: "推理请求",
     });
   }
 
-  async respond(request: ResponseModelRequest): Promise<ResponseModelResult> {
+  /**
+   * Runs or continues one agent-style tool-call turn.
+   *
+   * @param request Instructions, input, tool definitions, and optional continuation ID.
+   * @param options Optional caller cancellation signal.
+   * @returns Normalized response text, continuation ID, and tool calls.
+   * @throws If the continuation is unknown or the bounded request fails.
+   */
+  async respond(
+    request: ResponseModelRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<ResponseModelResult> {
     const messages = this.buildResponseMessages(request);
-    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: this.headers,
-      body: JSON.stringify({
-        model: this.config.chatModel,
-        messages,
-        tools: request.tools.map(toChatCompletionTool),
-        tool_choice: request.tools.length ? "auto" : "none",
-        temperature: this.config.temperature ?? 0.3,
-        max_tokens: this.config.maxTokens ?? 1000,
-        stream: false,
-      }),
-    });
-    await assertOk(response);
-    const data = (await response.json()) as ChatCompletionResponse;
+    const data = await withRequestDeadline(async (signal) => {
+      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify({
+          model: this.config.chatModel,
+          messages,
+          tools: request.tools.map(toChatCompletionTool),
+          tool_choice: request.tools.length ? "auto" : "none",
+          temperature: this.config.temperature ?? 0.3,
+          max_tokens: this.config.maxTokens ?? 1000,
+          stream: false,
+        }),
+        signal,
+      });
+      await assertOk(response);
+      return await response.json() as ChatCompletionResponse;
+    }, options?.signal, this.requestTimeoutMs, "推理请求");
     const choice = data.choices?.[0];
     const responseId = crypto.randomUUID();
     const assistantMessage = toAssistantMessage(choice);
@@ -148,10 +217,12 @@ export class OpenAICompatibleClient {
     };
   }
 
+  /** Returns the endpoint URL without a trailing slash. */
   private get baseUrl(): string {
     return this.config.baseUrl.replace(/\/$/, "");
   }
 
+  /** Returns JSON and optional bearer-auth request headers. */
   private get headers(): HeadersInit {
     return {
       "Content-Type": "application/json",
@@ -159,26 +230,42 @@ export class OpenAICompatibleClient {
     };
   }
 
+  /** Returns the configured positive request timeout or the finite default. */
+  private get requestTimeoutMs(): number {
+    return normalizeTimeout(this.config.requestTimeoutMs, DEFAULT_INFERENCE_REQUEST_TIMEOUT_MS);
+  }
+
+  /**
+   * Executes one bounded chat completion and extracts its text.
+   *
+   * @param request Messages, response format, cancellation, deadline, and error label.
+   * @returns Generated response text.
+   * @throws If the request fails or the response contains no text.
+   */
   private async completeChat(request: {
     messages: ChatMessage[];
     responseFormat?: "json_object";
     signal?: AbortSignal;
+    timeoutMs: number;
+    requestLabel: string;
   }): Promise<string> {
-    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: this.headers,
-      body: JSON.stringify({
-        model: this.config.chatModel,
-        messages: request.messages,
-        temperature: this.config.temperature ?? 0.3,
-        max_tokens: this.config.maxTokens ?? 1000,
-        stream: false,
-        ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}),
-      }),
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
-    await assertOk(response);
-    const data = (await response.json()) as ChatCompletionResponse;
+    const data = await withRequestDeadline(async (signal) => {
+      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify({
+          model: this.config.chatModel,
+          messages: request.messages,
+          temperature: this.config.temperature ?? 0.3,
+          max_tokens: this.config.maxTokens ?? 1000,
+          stream: false,
+          ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}),
+        }),
+        signal,
+      });
+      await assertOk(response);
+      return await response.json() as ChatCompletionResponse;
+    }, request.signal, request.timeoutMs, request.requestLabel);
     const choice = data.choices?.[0];
     const content = extractMessageContent(choice);
     if (!content) {
@@ -190,6 +277,13 @@ export class OpenAICompatibleClient {
     return content;
   }
 
+  /**
+   * Builds chat messages for a new request or stored continuation.
+   *
+   * @param request Agent-style input and optional previous response ID.
+   * @returns Chat-completions messages for the next turn.
+   * @throws If the requested continuation ID is unknown.
+   */
   private buildResponseMessages(request: ResponseModelRequest): ChatMessage[] {
     if (request.previousResponseId) {
       const previous = this.responseConversations.get(request.previousResponseId);
@@ -212,29 +306,116 @@ export class OpenAICompatibleClient {
   }
 }
 
-function mapTimeout(error: unknown): unknown {
-  if (error instanceof DOMException && error.name === "TimeoutError") {
-    return new Error(`连接超时（${HEALTH_CHECK_TIMEOUT_MS / 1000} 秒内无响应），请检查服务地址与网络。`);
+/**
+ * Runs an asynchronous request with a deadline and caller cancellation.
+ *
+ * @param operation Request body that receives the combined abort signal.
+ * @param callerSignal Optional caller-owned cancellation signal.
+ * @param timeoutMs Maximum request duration in milliseconds.
+ * @param requestLabel Safe label used in mapped errors.
+ * @returns The operation result.
+ * @throws A fixed safe timeout or cancellation error, or the original request error.
+ */
+async function withRequestDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+  requestLabel: string,
+): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  let callerCancelled = false;
+  const abortFromCaller = (): void => {
+    if (controller.signal.aborted) return;
+    timedOut = isNamedError(callerSignal?.reason, "TimeoutError");
+    callerCancelled = !timedOut;
+    controller.abort();
+  };
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
   }
-  return error;
+  const timeout = setTimeout(() => {
+    if (controller.signal.aborted) return;
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  let rejectOnAbort = (): void => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectOnAbort = () => reject(new DOMException("Request aborted", "AbortError"));
+    controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  });
+  try {
+    if (controller.signal.aborted) {
+      throw new DOMException("Request aborted", "AbortError");
+    }
+    return await Promise.race([operation(controller.signal), aborted]);
+  } catch (error) {
+    if (timedOut || isNamedError(error, "TimeoutError")) {
+      throw new Error(`${requestLabel}超时，请检查服务状态与网络后重试。`);
+    }
+    if (callerCancelled || controller.signal.aborted || isNamedError(error, "AbortError")) {
+      throw new Error(`${requestLabel}已取消。`);
+    }
+    throw error instanceof Error ? error : new Error(`${requestLabel}失败。`);
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+    controller.signal.removeEventListener("abort", rejectOnAbort);
+  }
 }
 
+/**
+ * Returns a positive integer timeout or the supplied default.
+ *
+ * @param value Candidate timeout.
+ * @param fallback Default timeout.
+ * @returns A positive integer duration in milliseconds.
+ */
+function normalizeTimeout(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.min(Math.max(1, Math.floor(value)), 2_147_483_647)
+    : fallback;
+}
+
+/**
+ * Checks an unknown exception without exposing its message.
+ *
+ * @param error Unknown thrown value.
+ * @param name Error name to match.
+ * @returns Whether the value is an Error with the requested name.
+ */
+function isNamedError(error: unknown, name: string): boolean {
+  return error instanceof Error && error.name === name;
+}
+
+/**
+ * Rejects unsuccessful HTTP responses with their status and response body text.
+ *
+ * @param response Fetch response to validate.
+ * @returns A promise that resolves for successful responses.
+ * @throws If the response status is not successful.
+ */
 async function assertOk(response: Response): Promise<void> {
   if (!response.ok) {
     throw new Error(`Inference request failed with HTTP ${response.status}: ${await response.text()}`);
   }
 }
 
+/** Text content part returned by compatible chat servers. */
 interface ChatContentPart {
   type?: string;
   text?: string;
 }
 
+/** Chat-completions message variants used by this adapter. */
 type ChatMessage =
   | { role: "system" | "user"; content: string | Array<ChatContentPart | { type: "image_url"; image_url: { url: string } }> }
   | { role: "assistant"; content: string | null; tool_calls?: ChatCompletionToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
+/** Chat-completions function-tool wire shape. */
 interface ChatCompletionTool {
   type: "function";
   function: {
@@ -244,6 +425,7 @@ interface ChatCompletionTool {
   };
 }
 
+/** Chat-completions tool-call wire shape. */
 interface ChatCompletionToolCall {
   id?: string;
   type?: "function";
@@ -253,6 +435,7 @@ interface ChatCompletionToolCall {
   };
 }
 
+/** One chat-completions choice across known compatible server variants. */
 interface ChatCompletionChoice {
   finish_reason?: string;
   text?: string;
@@ -263,6 +446,7 @@ interface ChatCompletionChoice {
   };
 }
 
+/** Minimal chat-completions response consumed by this adapter. */
 interface ChatCompletionResponse {
   choices?: ChatCompletionChoice[];
 }
@@ -271,6 +455,9 @@ interface ChatCompletionResponse {
  * Tolerant extraction across OpenAI-compatible servers: `message.content` may be
  * a plain string, an array of content parts (newer chat schema), or empty with
  * the text under `reasoning_content`; some servers use completion-style `text`.
+ *
+ * @param choice Optional first model choice.
+ * @returns Trimmed model text, or undefined when no text exists.
  */
 function extractMessageContent(choice: ChatCompletionChoice | undefined): string | undefined {
   if (!choice) return undefined;
@@ -293,6 +480,12 @@ function extractMessageContent(choice: ChatCompletionChoice | undefined): string
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/**
+ * Converts one public tool definition to chat-completions wire format.
+ *
+ * @param tool Public tool definition.
+ * @returns Chat-completions tool payload.
+ */
 function toChatCompletionTool(tool: ResponseToolDefinition): ChatCompletionTool {
   return {
     type: "function",
@@ -304,6 +497,12 @@ function toChatCompletionTool(tool: ResponseToolDefinition): ChatCompletionTool 
   };
 }
 
+/**
+ * Converts one model choice into a storable assistant message.
+ *
+ * @param choice Optional model choice.
+ * @returns Assistant message containing text and tool calls.
+ */
 function toAssistantMessage(choice: ChatCompletionChoice | undefined): ChatMessage {
   return {
     role: "assistant",
@@ -312,6 +511,12 @@ function toAssistantMessage(choice: ChatCompletionChoice | undefined): ChatMessa
   };
 }
 
+/**
+ * Normalizes function calls from one model choice.
+ *
+ * @param choice Optional model choice.
+ * @returns Valid named tool calls with parsed arguments.
+ */
 function extractChatToolCalls(choice: ChatCompletionChoice | undefined): ResponseModelToolCall[] {
   return (choice?.message?.tool_calls ?? [])
     .map((call) => {
@@ -329,6 +534,12 @@ function extractChatToolCalls(choice: ChatCompletionChoice | undefined): Respons
     .filter((call): call is ResponseModelToolCall => Boolean(call));
 }
 
+/**
+ * Parses function arguments without letting malformed model output escape.
+ *
+ * @param value String or object arguments returned by a model.
+ * @returns A plain argument object, or an empty object for invalid input.
+ */
 function parseArguments(value: unknown): Record<string, unknown> {
   if (!value) {
     return {};
@@ -347,6 +558,13 @@ function parseArguments(value: unknown): Record<string, unknown> {
   }
 }
 
+/**
+ * Limits diagnostic text length.
+ *
+ * @param value Text to bound.
+ * @param max Maximum retained character count.
+ * @returns Original or ellipsis-truncated text.
+ */
 function truncate(value: string, max = 300): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }

@@ -2,6 +2,8 @@
 
 本文档用于你在真实拼多多、本地模型、桌面安装包和 GitHub Release 验收过程中做标注。这里不能记录任何密码、Cookie、Token、原始买家消息、买家联系方式、原始 PDD payload、`anti-content` 或 LLM API Key。
 
+> **先跑自动取证，再做人工标注。** 用 RC 构建正常工作一段时间后，运行 `pnpm acceptance:from-audit`（见根目录 README「Release acceptance workflow」）。工具会从 `agent_audit` 汇总脱敏事实，但所有生成记录都会保持 `blocked` / `actor: generated`；操作员必须核对完整能力后，才能改成 `pass` / `actor: operator`。本地模型、桌面工作台、发布门自检和密钥安全始终需要人工验收，PDD calibration 也仍需单独执行。
+
 ## 标注规则
 
 - 只使用别名，例如 `pdd-account-a`、`pdd-account-b`、`shop-a`、`shop-b`。
@@ -54,6 +56,25 @@ Commit0683082172e56f5d79d5df76df52df0427973132
 Platformdarwin-arm64
 Tag未指定
 -
+
+## 金丝雀会话脚本（标准十条）
+
+金丝雀店验收时，用买家账号照本清单逐条发送，不要临场即兴。每条消息都对应一个明确的预期行为和取证判定线；十条发完，`pnpm acceptance:from-audit` 的五项自动观察（真实发送、Agent 审计链、知识引用、≥5 条不同消息、双店活跃）应全部有数据。两个店铺（`shop-a`、`shop-b`）各发一遍。下列消息是我们自己的测试文本，不涉及真实买家隐私。
+
+| # | 买家发送 | 预期行为 | 覆盖 |
+|---|---------|---------|------|
+| 1 | 在吗？ | 进线欢迎话术自动回复 | 队列、final 事件 |
+| 2 | 这个会生锈吗？ | 命中客服知识（材质/防锈条目），回复带引用 | 知识工具 + citations |
+| 3 | 好评有返现吗？ | 命中话术知识，礼貌拒绝返现 | 知识工具 + citations |
+| 4 | 有没有类似的推荐？给我看看链接 | 发送真实商品卡（真实 goods ID） | send_goods_link |
+| 5 | 我要人工客服 | 转接到人工 | transfer_conversation |
+| 6 | 我的快递怎么回事？一直不动 | 命中物流/包裹话术，安抚+方案 | 知识工具 |
+| 7 | 收到的东西有味道，怎么办？ | 命中气味处理话术 | 知识工具 |
+| 8 | （连续快速发两条）尺寸多大？/ 能水洗吗？ | 两条消息按序独立处理 | 队列顺序、≥5 条不同消息 |
+| 9 | 你们卖的东西太差了！（情绪宣泄，无具体问题） | 共情安抚话术或引导补充信息，不编造事实 | 兜底路径 |
+| 10 | 帮我查下订单 202X…（编造的非本店订单） | 礼貌说明非本店订单/知识不足，不假装确定 | 知识不足路径 |
+
+发送完成后：打开 `AI 处理记录` 确认每条消息的 model→tool→final 审计链完整；商品卡与转人工两条确认真实生效（买家端可见卡片、会话实际转走）；随后运行取证命令并按「先跑自动取证，再做人工标注」流程复核。
 
 ## 任务 A：真实 PDD 核心链路
 
@@ -251,6 +272,8 @@ unknown:websocket_closed
 
 目标：验证真实 Agent 可以处理商品问题、政策问题、商品推荐、转人工和知识不足路径。
 
+> 消息内容直接使用上方「金丝雀会话脚本」的对应条目（#2 商品问题、#3 政策问题、#4 推荐、#5 转人工、#10 知识不足），保证每次验收覆盖面一致。
+
 步骤：
 
 1. 准备本地 AI 或已选择的 OpenAI-compatible endpoint。
@@ -265,7 +288,7 @@ unknown:websocket_closed
 成功判定：
 
 - [ ] 商品问题调用 `get_product_knowledge` 或 `get_shop_products`。
-- [ ] 政策问题调用 `search_customer_service_knowledge`。
+- [ ] 政策问题在同一 `messageId` 上依次完成 `list_customer_service_knowledge` 调用/成功结果、`get_customer_service_knowledge` 调用/带引用的成功结果、带同一引用的成功 `final`，以及成功的 `pdd_send_success`。
 - [ ] 推荐路径发送真实商品卡，或记录脱敏阻塞原因。
 - [ ] 转人工路径调用真实 transfer，或记录脱敏阻塞原因。
 - [ ] 知识不足路径不会假装确定。

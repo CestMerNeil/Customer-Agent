@@ -116,7 +116,6 @@ describe("normalizePddMessage", () => {
     expect(context).toMatchObject({
       id: "goods-1",
       type: "goods_card",
-      content: expect.stringContaining("goods-1"),
     });
     expect(context.goods).toMatchObject({
       goodsId: "g-1",
@@ -124,6 +123,7 @@ describe("normalizePddMessage", () => {
       goodsPrice: "59.90",
       goodsSpec: "米白色",
     });
+    expect(context.content).toBe("真丝围巾 米白色 g-1");
   });
 
   it("normalizes order payloads into order context", () => {
@@ -143,12 +143,12 @@ describe("normalizePddMessage", () => {
     expect(context).toMatchObject({
       id: "order-1",
       type: "order_info",
-      content: expect.stringContaining("order-1"),
     });
     expect(context.order).toMatchObject({
       orderId: "ord-1001",
       goodsName: "连衣裙",
     });
+    expect(context.content).toBe("ord-1001 连衣裙");
   });
 
   it("maps mall system messages into mall_system_msg content", () => {
@@ -168,5 +168,29 @@ describe("normalizePddMessage", () => {
       content: "买家正在输入",
       buyerId: "buyer-5",
     });
+  });
+
+  it("persists only allowlisted fields from nested PDD payloads", () => {
+    const sensitiveValue = ["unused", "private", "field"].join("-");
+    const context = normalizePddMessage(
+      {
+        response: "push",
+        cookies: sensitiveValue,
+        raw_payload: { contact: sensitiveValue },
+        message: {
+          msg_id: "minimal-1",
+          type: "goods_card",
+          goods_card: { goods_id: "g-1", goods_name: "围巾", internal_token: sensitiveValue },
+          from: { uid: "buyer-1", role: "user", phone: sensitiveValue },
+        },
+      },
+      { accountId: "account-1", shopId: "shop-1" },
+    );
+
+    const persisted = JSON.stringify(context);
+    expect(context).not.toHaveProperty("raw");
+    expect(context.goods).not.toHaveProperty("raw");
+    expect(persisted).not.toContain(sensitiveValue);
+    expect(context).toMatchObject({ id: "minimal-1", buyerId: "buyer-1", goods: { goodsId: "g-1", goodsName: "围巾" } });
   });
 });

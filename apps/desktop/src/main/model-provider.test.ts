@@ -37,8 +37,8 @@ describe("Model Provider routing", () => {
     expect(resolved).toMatchObject({ kind: "local", runtime: { modelId: runtime.modelId } });
   });
 
-  it("rejects an incapable local provider without falling back to remote settings", () => {
-    expect(() => resolveModelProviderConfig(settings({
+  it("migrates an unapproved local model to the multimodal default without using remote settings", () => {
+    const resolved = resolveModelProviderConfig(settings({
       modelProvider: "local",
       inferenceRuntime: {
         ...createDefaultLocalRuntimeConfig(),
@@ -49,7 +49,12 @@ describe("Model Provider routing", () => {
         baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         chatModel: "qwen-vl-max",
       },
-    }), "multimodal")).toThrow("本地 Model Provider 不支持商品图片理解");
+    }), "multimodal");
+
+    expect(resolved).toMatchObject({
+      kind: "local",
+      runtime: { modelId: createDefaultLocalRuntimeConfig().modelId },
+    });
   });
 
   it("rejects a remote provider that points back to a local runtime", () => {

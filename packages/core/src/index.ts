@@ -31,6 +31,10 @@ export type {
   ProductSyncMode,
   ProductSyncPhase,
   ProductSyncProgress,
+  RendererAccountRecord,
+  RendererAppSettings,
+  RendererInferenceConfig,
+  RendererInferenceRuntimeConfig,
   ReplyDraftRecord
 } from "./domain.js";
 export type {

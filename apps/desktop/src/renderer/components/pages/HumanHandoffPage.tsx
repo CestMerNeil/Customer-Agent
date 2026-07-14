@@ -140,7 +140,7 @@ export const HumanHandoffPage: React.FC = () => {
                   {message?.buyerNickname ?? message?.buyerId ?? draft.messageId}
                 </Typography>
                 <Box sx={{ width: 110 }}>
-                  <Pill label={handoffReason(message)} tone="warning" />
+                  <Pill label={handoffReason(message).label} tone={handoffReason(message).tone} />
                 </Box>
                 <InputBase
                   value={notes[draft.id] ?? draft.operatorNote ?? ""}
@@ -234,9 +234,10 @@ export const HumanHandoffPage: React.FC = () => {
   );
 };
 
-function handoffReason(message: MessageRecord | undefined): string {
-  if (!message) return "人工处理";
-  if (message.error) return "需要人工确认";
-  if (message.state === "escalated") return "AI 已停止";
-  return "等待人工";
+/** Reason pill per design: 等待人工=warning, AI 已停止=outline, 需要人工确认=error. */
+function handoffReason(message: MessageRecord | undefined): { label: string; tone: "warning" | "outline" | "error" } {
+  if (!message) return { label: "人工处理", tone: "warning" };
+  if (message.error) return { label: "需要人工确认", tone: "error" };
+  if (message.state === "escalated") return { label: "AI 已停止", tone: "outline" };
+  return { label: "等待人工", tone: "warning" };
 }

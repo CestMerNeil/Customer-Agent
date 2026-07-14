@@ -43,3 +43,14 @@ The system SHALL provide deduplication, retry/backoff, rate limits, circuit brea
 #### Scenario: Downstream dependency is unhealthy
 - **WHEN** PDD, LLM, or knowledge search repeatedly fails
 - **THEN** the appropriate circuit breaker opens, queued work is paused or rerouted, and the UI shows the affected dependency and recovery condition
+
+### Requirement: Bounded durable local persistence
+The system SHALL serialize and atomically replace SQL.js snapshots, preserve an unreadable database for diagnosis, and bound diagnostic log retention.
+
+#### Scenario: Bursty diagnostics are appended
+- **WHEN** connection or dependency failures emit many logs concurrently
+- **THEN** persistence coalesces snapshot writes and retains only the configured newest diagnostic rows
+
+#### Scenario: Existing database is unreadable
+- **WHEN** startup integrity checks cannot open or validate the database
+- **THEN** startup fails with a clear diagnostic and does not silently replace the file with an empty database
