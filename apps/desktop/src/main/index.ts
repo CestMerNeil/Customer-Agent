@@ -49,6 +49,10 @@ import {
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
+const packagedSmokeUserDataDir = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR;
+if (packagedSmokeUserDataDir) {
+  app.setPath("userData", packagedSmokeUserDataDir);
+}
 const windowIconPath = app.isPackaged
   ? path.join(process.resourcesPath, "icon.png")
   : path.join(dirname, "../../build/icon.png");
