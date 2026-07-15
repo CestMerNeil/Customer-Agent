@@ -1,7 +1,7 @@
 [
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -14,7 +14,7 @@
   },
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -27,7 +27,7 @@
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -40,7 +40,7 @@
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -53,7 +53,7 @@
   },
   {
     "capability": "local-model-runtime-provisioning",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -66,7 +66,7 @@
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -79,7 +79,7 @@
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -92,7 +92,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -105,7 +105,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -118,7 +118,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -131,7 +131,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -144,7 +144,7 @@
   },
   {
     "capability": "desktop-operations-workspace",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -157,7 +157,7 @@
   },
   {
     "capability": "real-acceptance-release-gates",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
@@ -170,7 +170,7 @@
   },
   {
     "capability": "secret-safety-governance",
-    "commitSha": "b90595cfbe5b0fbe98e95b3861347124def7a131",
+    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "win32-x64",
