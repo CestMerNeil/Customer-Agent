@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import {
   aggregate,
@@ -126,8 +127,15 @@ test("summarizes a persisted PDD send as blocked candidate evidence", () => {
 test("checks the scoped Electron user-data path before legacy locations", () => {
   const [candidate] = defaultDbCandidates("darwin", "/Users/operator", {});
 
-  assert.equal(
-    candidate,
-    "/Users/operator/Library/Application Support/@customer-agent/desktop/data/customer-agent.sqlite",
-  );
+  assert.deepEqual(candidate.split(path.sep), [
+    "",
+    "Users",
+    "operator",
+    "Library",
+    "Application Support",
+    "@customer-agent",
+    "desktop",
+    "data",
+    "customer-agent.sqlite",
+  ]);
 });
