@@ -2242,12 +2242,12 @@ app.whenReady().then(async () => {
   try {
     configureBundledPlaywright();
     await pruneRetiredModelCache();
-    await createWindow();
-    setupIpc();
-    setupAppUpdater();
     if (await completePackagedSmokeIfRequested()) {
       return;
     }
+    await createWindow();
+    setupIpc();
+    setupAppUpdater();
     if (app.isPackaged) {
       setTimeout(() => {
         void checkForAppUpdates();
