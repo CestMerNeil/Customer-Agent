@@ -21,6 +21,9 @@ packages/*/node_modules/.vite/
 # Local runtime data and secrets
 .env
 .env.*
+config/account_cookies.json
+config/account_status.json
+config/cookies.json
 *.log
 *.db
 *.sqlite
