@@ -98,7 +98,7 @@ jobs:
             executable_path="$(find "$app_path/Contents/MacOS" -type f | head -n 1)"
           else
             resources_path="$(find apps/desktop/release -path "*/resources" -type d | head -n 1)"
-            executable_path="$(find apps/desktop/release -path "*/win-unpacked/*.exe" -type f | head -n 1)"
+            executable_path="$(find apps/desktop/release -path "*/win-unpacked/*.exe" -type f ! -iname "elevate.exe" | head -n 1)"
           fi
           if [[ -z "$resources_path" || -z "$executable_path" ]]; then
             echo "Unable to locate packaged runtime paths" >&2
