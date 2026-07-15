@@ -200,9 +200,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: dist-artifacts/**
-          prerelease: true
+          prerelease: false
           body: |
-            This unsigned preview is intended for evaluation. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
+            This release is unsigned. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
           fail_on_unmatched_files: true
 
   publish-recovery:
@@ -266,7 +266,7 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag }}
           files: dist-artifacts/**
-          prerelease: true
+          prerelease: false
           body: |
-            This unsigned preview is intended for evaluation. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
+            This release is unsigned. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
           fail_on_unmatched_files: true
