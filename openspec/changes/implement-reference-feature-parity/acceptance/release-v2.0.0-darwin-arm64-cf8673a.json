@@ -1,7 +1,7 @@
 [
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -14,7 +14,7 @@
   },
   {
     "capability": "pdd-real-merchant-operations",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -27,7 +27,7 @@
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -40,7 +40,7 @@
   },
   {
     "capability": "auditable-agent-workflow",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -53,7 +53,7 @@
   },
   {
     "capability": "local-model-runtime-provisioning",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -66,7 +66,7 @@
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -79,7 +79,7 @@
   },
   {
     "capability": "knowledge-product-governance",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -92,7 +92,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -105,7 +105,7 @@
   },
   {
     "capability": "message-queue-concurrency",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -118,7 +118,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -131,7 +131,7 @@
   },
   {
     "capability": "multi-shop-operations",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -144,7 +144,7 @@
   },
   {
     "capability": "desktop-operations-workspace",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -157,7 +157,7 @@
   },
   {
     "capability": "real-acceptance-release-gates",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
@@ -170,7 +170,7 @@
   },
   {
     "capability": "secret-safety-governance",
-    "commitSha": "76a2386bbfdc27f74be461aaf295df65ebe3488d",
+    "commitSha": "9897f33a0cd31a33af69874823c77ac96fbc85b4",
     "version": "2.0.0",
     "tag": "v2.0.0",
     "platform": "darwin-arm64",
