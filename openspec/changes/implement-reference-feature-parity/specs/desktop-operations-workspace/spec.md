@@ -34,3 +34,14 @@ Every production workspace surface SHALL provide loading, empty, error, retry, s
 #### Scenario: Page load fails
 - **WHEN** a page fails to load its data
 - **THEN** the UI shows a sanitized error and a retry path without exposing secrets or private buyer data
+
+### Requirement: Bounded desktop lifecycle
+The desktop application SHALL run as one instance and SHALL release owned background resources when its last window closes or the application quits.
+
+#### Scenario: Last window closes
+- **WHEN** the operator closes the last application window on macOS or Windows
+- **THEN** Electron quits and cancels queue wakeups and product sync work, disposes PDD resources, stops the local model process, and flushes the database
+
+#### Scenario: A second instance starts
+- **WHEN** another application instance is launched
+- **THEN** it focuses the existing window instead of starting duplicate background workers

@@ -50,7 +50,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ title, inferenceStatus }) 
             alignItems: "center",
             gap: 1,
             bgcolor: "transparent",
-            color: "#525252",
+            color: tokens.color.text.secondary,
             fontSize: 11,
             fontWeight: 600,
           }}
@@ -58,12 +58,12 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ title, inferenceStatus }) 
           <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: statusColor }} />
           {inferenceStatus.label}
         </Box>
-        <Box sx={{ width: "1px", height: 16, bgcolor: "#e6e6e6" }} />
+        <Box sx={{ width: "1px", height: 16, bgcolor: tokens.color.border.hairline }} />
         <IconButton size="small" color="inherit" aria-label="搜索">
-          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: "#8a8a8a" }}>search</span>
+          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: tokens.color.text.tertiary }}>search</span>
         </IconButton>
         <IconButton size="small" color="inherit" aria-label="通知">
-          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: "#8a8a8a" }}>notifications</span>
+          <span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 19, color: tokens.color.text.tertiary }}>notifications</span>
         </IconButton>
       </Stack>
     </Box>

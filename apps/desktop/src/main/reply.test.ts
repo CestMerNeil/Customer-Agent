@@ -6,6 +6,7 @@ describe("generateAndPersistReply", () => {
   it("returns an auto-send reply with chat only when knowledge search is unavailable", async () => {
     const savedDrafts: ReplyDraftRecord[] = [];
     const appendLog = vi.fn();
+    const audits: unknown[] = [];
     const settings: AppSettings = {
       businessHours: { start: "08:00", end: "23:00" },
       knowledge: { topK: 4 },
@@ -37,7 +38,10 @@ describe("generateAndPersistReply", () => {
           listGovernedKnowledge: async () => [],
           getConversationMemory: async () => undefined,
           saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
-          appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-24T00:00:00.000Z", ...audit }),
+          appendAgentAudit: async (audit) => {
+            audits.push(audit);
+            return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
+          },
         },
         createInferenceClient: async () => nativeAgentClient([{ outputText: "您好，这款可以帮您确认尺码。", toolCalls: [] }]),
       },
@@ -47,6 +51,12 @@ describe("generateAndPersistReply", () => {
     expect(result.ok && result.reply.text).toBe("您好，这款可以帮您确认尺码。");
     expect(savedDrafts).toHaveLength(0);
     expect(appendLog).not.toHaveBeenCalled();
+    expect(audits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "tool_call", toolName: "list_customer_service_knowledge" }),
+      expect.objectContaining({ eventType: "tool_result", toolName: "list_customer_service_knowledge", ok: true }),
+      expect.objectContaining({ eventType: "final", ok: true, citations: [] }),
+    ]));
+    expect(JSON.stringify(audits)).not.toContain("您好，这款可以帮您确认尺码");
   });
 
   it("stores a meta-note instead of the verbatim reply in conversation memory", async () => {
@@ -176,6 +186,9 @@ describe("generateAndPersistReply", () => {
           },
           listGovernedKnowledge: async (options) => {
             expect(options).toMatchObject({ shopId: "shop-a", eligibleOnly: true });
+            if (options?.kind === "customer_service") {
+              return [];
+            }
             return [
               governedKnowledge({ id: "eligible", content: "围巾库存充足，可当天发货。", reviewState: "reviewed", enabled: true }),
               governedKnowledge({ id: "draft", content: "草稿知识不应进入 prompt。", reviewState: "draft", enabled: true }),
@@ -233,7 +246,7 @@ describe("generateAndPersistReply", () => {
           getConversationMemory: async () => undefined,
           saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-26T04:00:00.000Z", ...memory }),
           appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-26T04:00:00.000Z", ...audit }),
-          listGovernedKnowledge: async () => [
+          listGovernedKnowledge: async (options) => options?.kind === "customer_service" ? [] : [
             governedKnowledge({
               citationId: "product:shop-a:788320987478",
               sourceId: "788320987478",
@@ -288,6 +301,9 @@ describe("generateAndPersistReply", () => {
           saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-26T04:00:00.000Z", ...memory }),
           appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-26T04:00:00.000Z", ...audit }),
           listGovernedKnowledge: async (options) => {
+            if (options?.kind === "customer_service") {
+              return [];
+            }
             expect(options).toMatchObject({ citationId: "product:shop-a:788320987478" });
             return [
               governedKnowledge({
@@ -347,15 +363,16 @@ describe("generateAndPersistReply", () => {
             audits.push(audit);
             return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
           },
-          listGovernedKnowledge: async () => [
-            governedKnowledge({
+          listGovernedKnowledge: async (options) => {
+            expect(options).toMatchObject({ kind: "customer_service", shopId: "shop-a", eligibleOnly: true });
+            return [governedKnowledge({
               kind: "customer_service",
               citationId: "customer_service:shop-a:return",
               title: "退货政策",
               content: "围巾支持签收七天内退货。",
               tags: ["退货"],
-            }),
-          ],
+            })];
+          },
         },
         createInferenceClient: async () => ({
           chat,
@@ -366,8 +383,8 @@ describe("generateAndPersistReply", () => {
                 responseId: "resp-1",
                 toolCalls: [{
                   callId: "call-1",
-                  name: "search_customer_service_knowledge",
-                  arguments: { query: "围巾退货" },
+                  name: "get_customer_service_knowledge",
+                  arguments: { citation_ids: ["customer_service:shop-a:return"] },
                 }],
               };
             }
@@ -386,17 +403,70 @@ describe("generateAndPersistReply", () => {
     expect(chat).not.toHaveBeenCalled();
     expect(responseRequests[0]).toMatchObject({
       tools: expect.arrayContaining([
-        expect.objectContaining({ type: "function", name: "search_customer_service_knowledge" }),
+        expect.objectContaining({ type: "function", name: "list_customer_service_knowledge" }),
+        expect.objectContaining({ type: "function", name: "get_customer_service_knowledge" }),
       ]),
     });
+    expect(JSON.stringify(responseRequests[0])).toContain("citation_id=customer_service:shop-a:return");
+    expect(JSON.stringify(responseRequests[0])).not.toContain("围巾支持签收七天内退货");
     expect(responseRequests[1]).toMatchObject({
       previousResponseId: "resp-1",
       input: [expect.objectContaining({ type: "function_call_output", call_id: "call-1" })],
     });
+    expect(JSON.stringify(responseRequests[1])).toContain("围巾支持签收七天内退货");
     expect(audits).toEqual(expect.arrayContaining([
-      expect.objectContaining({ eventType: "tool_call", toolName: "search_customer_service_knowledge" }),
-      expect.objectContaining({ eventType: "tool_result", toolName: "search_customer_service_knowledge", ok: true }),
-      expect.objectContaining({ eventType: "final" }),
+      expect.objectContaining({ eventType: "tool_call", toolName: "list_customer_service_knowledge" }),
+      expect.objectContaining({ eventType: "tool_result", toolName: "list_customer_service_knowledge", ok: true }),
+      expect.objectContaining({ eventType: "tool_call", toolName: "get_customer_service_knowledge" }),
+      expect.objectContaining({ eventType: "tool_result", toolName: "get_customer_service_knowledge", ok: true }),
+      expect.objectContaining({
+        eventType: "final",
+        ok: true,
+        citations: [expect.objectContaining({ documentId: "customer_service:shop-a:return" })],
+      }),
+    ]));
+    expect(JSON.stringify(audits)).not.toContain("围巾支持签收七天内退货");
+  });
+
+  it("rejects AI-selected customer knowledge ids outside the eligible current-shop catalog", async () => {
+    const audits: unknown[] = [];
+    const result = await generateAndPersistReply(
+      {
+        mode: "automatic",
+        context: {
+          id: "message-1", channel: "pinduoduo", type: "text", content: "能退货吗？",
+          shopId: "shop-a", accountId: "account-a", buyerId: "buyer-a",
+          receivedAt: "2026-06-24T00:00:00.000Z", raw: {},
+        },
+      },
+      {
+        store: {
+          getSettings: async () => ({ businessHours: { start: "08:00", end: "23:00" }, knowledge: { topK: 4 } }),
+          saveDraft: async (draft) => draft,
+          appendLog: vi.fn(),
+          listGovernedKnowledge: async () => [governedKnowledge({
+            kind: "customer_service",
+            citationId: "customer_service:shop-a:return",
+            title: "退货政策",
+            content: "七天内可退货。",
+          })],
+          getConversationMemory: async () => undefined,
+          saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
+          appendAgentAudit: async (audit) => {
+            audits.push(audit);
+            return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
+          },
+        },
+        createInferenceClient: async () => nativeAgentClient([
+          { responseId: "resp-1", toolCalls: [{ callId: "call-1", name: "get_customer_service_knowledge", arguments: { citation_ids: ["customer_service:shop-b:return"] } }] },
+          { responseId: "resp-2", outputText: "抱歉，当前知识不足，请联系人工客服。", toolCalls: [] },
+        ]),
+      },
+    );
+
+    expect(result).toMatchObject({ ok: true, reply: { sources: [] } });
+    expect(audits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "tool_result", toolName: "get_customer_service_knowledge", ok: false }),
     ]));
   });
 
@@ -428,6 +498,9 @@ describe("generateAndPersistReply", () => {
           saveDraft: async (draft) => draft,
           appendLog: vi.fn(),
           listGovernedKnowledge: async (options) => {
+            if (options?.kind === "customer_service") {
+              return [];
+            }
             expect(options).toMatchObject({
               kind: "product",
               shopId: "shop-a",
@@ -458,9 +531,10 @@ describe("generateAndPersistReply", () => {
         eventType: "tool_result",
         toolName: "send_goods_link",
         ok: false,
-        summary: expect.stringContaining("cross_shop_goods_blocked"),
+        summary: "tool_result ok=false citations=0 error=true",
       }),
     ]));
+    expect(JSON.stringify(audits)).not.toContain("cross_shop_goods_blocked");
   });
 
   it("compresses long conversation memory with the real chat client before saving", async () => {
@@ -593,7 +667,6 @@ describe("generateAndPersistReply", () => {
           getSettings: async () => ({
             businessHours: { start: "08:00", end: "23:00" },
             knowledge: { topK: 4 },
-            handoff: { keywords: [], intentRules: [] },
           }),
           saveDraft,
           appendLog: vi.fn(),
@@ -610,6 +683,39 @@ describe("generateAndPersistReply", () => {
     expect(result).toMatchObject({ ok: true, handler: "keyword_handoff", action: "escalated" });
     expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ state: "escalated", messageId: message.id }));
     expect(createInferenceClient).not.toHaveBeenCalled();
+  });
+
+  it("lets policy questions reach the Agent when handoff keywords are explicitly empty", async () => {
+    const upsertMessage = vi.fn(async (message: MessageRecord) => message);
+    const createInferenceClient = vi.fn(async () => nativeAgentClient([
+      { responseId: "resp-1", outputText: "您好，我帮您查询退款政策。", toolCalls: [] },
+    ]));
+    const message = buildMessage({ content: "退款政策是什么？" });
+
+    const result = await runInboundHandlerChain(
+      { context: message },
+      {
+        store: {
+          getSettings: async () => ({
+            businessHours: { start: "08:00", end: "23:00" },
+            knowledge: { topK: 4 },
+            handoff: { keywords: [], intentRules: [] },
+          }),
+          saveDraft: async (draft) => draft,
+          appendLog: vi.fn(),
+          listGovernedKnowledge: async () => [],
+          getConversationMemory: async () => undefined,
+          saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
+          appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-24T00:00:00.000Z", ...audit }),
+          upsertMessage,
+        },
+        createInferenceClient,
+      },
+    );
+
+    expect(result).toMatchObject({ ok: true, handler: "ai_agent", action: "send" });
+    expect(createInferenceClient).toHaveBeenCalledOnce();
+    expect(upsertMessage).not.toHaveBeenCalledWith(expect.objectContaining({ state: "escalated" }));
   });
 
   it("runs configured intent handoff before AI generation", async () => {
@@ -762,6 +868,7 @@ describe("generateAndPersistReply", () => {
   it("runs AI handler when no higher-priority handler claims the message", async () => {
     const savedDrafts: ReplyDraftRecord[] = [];
     const sendReply = vi.fn();
+    const audits: Array<{ eventType: string }> = [];
 
     const result = await runInboundHandlerChain(
       { context: buildMessage({ content: "这件有库存吗" }) },
@@ -780,7 +887,10 @@ describe("generateAndPersistReply", () => {
           listGovernedKnowledge: async () => [],
           getConversationMemory: async () => undefined,
           saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
-          appendAgentAudit: async (audit) => ({ id: "audit-1", createdAt: "2026-06-24T00:00:00.000Z", ...audit }),
+          appendAgentAudit: async (audit) => {
+            audits.push(audit);
+            return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
+          },
           upsertMessage: async (message: MessageRecord) => message,
         },
         createInferenceClient: async () => nativeAgentClient([{ responseId: "resp-1", outputText: "您好，我帮您确认。", toolCalls: [] }]),
@@ -791,6 +901,35 @@ describe("generateAndPersistReply", () => {
     expect(result).toMatchObject({ ok: true, handler: "ai_agent", action: "send" });
     expect(savedDrafts).toHaveLength(0);
     expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ content: "这件有库存吗" }), "您好，我帮您确认。");
+    expect(audits).toContainEqual(expect.objectContaining({ eventType: "pdd_send_success" }));
+  });
+
+  it("does not attest PDD delivery when the real send fails", async () => {
+    const audits: Array<{ eventType: string }> = [];
+    const message = buildMessage({ content: "这件有库存吗" });
+
+    await expect(runInboundHandlerChain(
+      { context: message },
+      {
+        store: {
+          getSettings: async () => ({ businessHours: { start: "08:00", end: "23:00" }, knowledge: { topK: 4 } }),
+          saveDraft: async (draft) => draft,
+          appendLog: vi.fn(),
+          listGovernedKnowledge: async () => [],
+          getConversationMemory: async () => undefined,
+          saveConversationMemory: async (memory) => ({ id: "memory-1", updatedAt: "2026-06-24T00:00:00.000Z", ...memory }),
+          appendAgentAudit: async (audit) => {
+            audits.push(audit);
+            return { id: `audit-${audits.length}`, createdAt: "2026-06-24T00:00:00.000Z", ...audit };
+          },
+          upsertMessage: async (record: MessageRecord) => record,
+        },
+        createInferenceClient: async () => nativeAgentClient([{ responseId: "resp-1", outputText: "您好，我帮您确认。", toolCalls: [] }]),
+        sendReply: async () => { throw new Error("PDD send rejected"); },
+      },
+    )).rejects.toThrow("PDD send rejected");
+
+    expect(audits).not.toContainEqual(expect.objectContaining({ eventType: "pdd_send_success" }));
   });
 });
 

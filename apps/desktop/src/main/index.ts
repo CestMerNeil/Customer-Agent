@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -23,21 +23,39 @@ import {
   getLocalModelProfileForRuntime,
   localModelProfiles,
   normalizeLocalRuntimeConfig,
-  runtimeConfigSupportsLocalCapability,
   validateAcceptanceRecordSet,
 } from "@customer-agent/core";
 import type { AcceptanceRecord } from "@customer-agent/core";
 import { SqliteAppStore } from "@customer-agent/db";
 import { ModelScopeManager, RuntimeProcessManager, OpenAICompatibleClient } from "@customer-agent/inference";
-import type { ModelDownloadProgress, ResponseModelRequest, ResponseModelResult } from "@customer-agent/inference";
-import { PddApi, PddBrowserHttpClient, PddHttpClient, PddProductSyncService, PddService, parseCookieJar } from "@customer-agent/pdd";
+import type { ModelDownloadProgress, MultimodalChatRequest, ResponseModelRequest, ResponseModelResult } from "@customer-agent/inference";
+import { PddApi, PddBrowserHttpClient, PddHttpClient, PddProductSyncService, PddService, parseCookieJar, resolvePddProfileDir, withPddBrowserProfileLock } from "@customer-agent/pdd";
 import type { ProductKnowledgeExtractionInput, ProductKnowledgeExtractionResult } from "@customer-agent/pdd";
-import { appendDiagnostic, generateAndPersistReply, runInboundHandlerChain, sanitizeUserFacingError } from "./reply.js";
+import { appendDiagnostic, generateAndPersistReply, recordPddSendSuccess, runInboundHandlerChain, sanitizeUserFacingError } from "./reply.js";
 import { extractKnowledgeEntries } from "./knowledge-extract.js";
+import { readDocumentText } from "./document-ingestion.js";
+import { DocumentHandles } from "./document-handles.js";
 import { checkForAppUpdates, getAppUpdateStatus, installDownloadedAppUpdate, setupAppUpdater } from "./updater.js";
+import { applyWindowSecurity, isTrustedRendererUrl, resolveDevServerUrl } from "./window-security.js";
+import { resolveModelProvider, resolveModelProviderConfig, type ModelProviderCapability } from "./model-provider.js";
+import {
+  sanitizeRendererSettingsUpdate,
+  toRendererAccount,
+  toRendererModelDownloadResult,
+  toRendererRuntimePrepareResult,
+  toRendererRuntimeStatus,
+  toRendererSettings,
+} from "./renderer-boundary.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
+const packagedSmokeUserDataPrefix = "--customer-agent-packaged-smoke-user-data-dir=";
+const packagedSmokeReadyPrefix = "--customer-agent-packaged-smoke-ready-file=";
+const packagedSmokeUserDataDir = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR
+  ?? process.argv.find((argument) => argument.startsWith(packagedSmokeUserDataPrefix))?.slice(packagedSmokeUserDataPrefix.length);
+if (packagedSmokeUserDataDir) {
+  app.setPath("userData", packagedSmokeUserDataDir);
+}
 const windowIconPath = app.isPackaged
   ? path.join(process.resourcesPath, "icon.png")
   : path.join(dirname, "../../build/icon.png");
@@ -47,12 +65,25 @@ let pddService: PddService | undefined;
 let runtimeProcessManager: RuntimeProcessManager | undefined;
 let modelScopeManager: ModelScopeManager | undefined;
 let modelScopeManagerCommand: string | undefined;
-let inboundQueueProcessing = false;
+let inboundQueueTask: Promise<void> | undefined;
 let inboundQueueWakeup: NodeJS.Timeout | undefined;
+let isShuttingDown = false;
+let shutdownComplete = false;
+let shutdownPromise: Promise<void> | undefined;
+let runtimeStartGeneration = 0;
+let runtimeProvisionController = new AbortController();
 const dependencyGovernor = new DependencyGovernor();
 const productSyncRuns = new Map<string, ProductSyncProgress>();
 const productSyncControllers = new Map<string, AbortController>();
+const productSyncTasks = new Map<string, Promise<void>>();
+const productSyncAccountRuns = new Map<string, string>();
+const pddBrowserContexts = new Set<{ close(): Promise<void> }>();
+const activeIpcTasks = new Set<Promise<unknown>>();
+const documentHandles = new DocumentHandles();
 let mainWindow: BrowserWindow | undefined;
+const MAX_PRODUCT_SYNC_HISTORY = 20;
+const rendererEntryUrl = pathToFileURL(path.join(dirname, "../renderer/index.html"));
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 const DEFAULT_RUNTIME: InferenceRuntimeConfig = {
   runtimeKind: "managed_llama_server",
@@ -63,6 +94,7 @@ const DEFAULT_RUNTIME: InferenceRuntimeConfig = {
   port: 8000,
 };
 const RUNTIME_BINARY_NAME = "llama-server";
+const RUNTIME_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 const RUNTIME_DOWNLOAD_ENV_PREFIX = "CUSTOMER_AGENT_LLAMA_RUNTIME_URL";
 const RUNTIME_DOWNLOAD_CHECKSUM_ENV = "CUSTOMER_AGENT_LLAMA_RUNTIME_SHA256";
 const DEFAULT_LLAMA_RUNTIME_DOWNLOADS: Record<string, { url: string; sha256: string }> = {
@@ -90,14 +122,53 @@ function configureBundledPlaywright() {
   process.env.PLAYWRIGHT_BROWSERS_PATH = browsersPath;
 }
 
+/** Opens the application store with Electron's OS-backed protection for its encryption master key. */
 function getStore(): Promise<SqliteAppStore> {
-  storePromise ??= SqliteAppStore.open(path.join(app.getPath("userData"), "data"));
+  storePromise ??= SqliteAppStore.open(path.join(app.getPath("userData"), "data"), {
+    protector: {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      protect: (value) => safeStorage.encryptString(value),
+      unprotect: (value) => safeStorage.decryptString(value),
+    },
+  });
   return storePromise;
 }
 
 function getRuntimeProcessManager(): RuntimeProcessManager {
   runtimeProcessManager ??= new RuntimeProcessManager();
   return runtimeProcessManager;
+}
+
+/** Invalidates and aborts every in-flight managed-runtime provisioning request. */
+function cancelRuntimeProvisioning(): void {
+  runtimeStartGeneration += 1;
+  runtimeProvisionController.abort();
+  runtimeProvisionController = new AbortController();
+  modelScopeManager?.cancelDownloads();
+}
+
+/** Captures the current provisioning generation for one runtime-start attempt. */
+function captureRuntimeStart(): { generation: number; signal: AbortSignal } {
+  if (isShuttingDown) {
+    throw new Error("应用正在退出，已取消本地 AI 启动。");
+  }
+  return {
+    generation: runtimeStartGeneration,
+    signal: runtimeProvisionController.signal,
+  };
+}
+
+/** Starts a new user-requested provisioning generation and cancels the previous one. */
+function replaceRuntimeProvisioning(): { generation: number; signal: AbortSignal } {
+  cancelRuntimeProvisioning();
+  return captureRuntimeStart();
+}
+
+/** Rejects stale runtime-start work before it can spawn or persist state. */
+function assertRuntimeStartCurrent(start: { generation: number; signal: AbortSignal }): void {
+  if (isShuttingDown || start.signal.aborted || start.generation !== runtimeStartGeneration) {
+    throw new Error("本地 AI 启动已取消。");
+  }
 }
 
 function getRuntimeDataDir(): string {
@@ -197,7 +268,12 @@ async function verifyDownloadChecksum(filePath: string, expectedSha256?: string)
   }
 }
 
-async function downloadRuntimeBinary(url: string, filePath: string, expectedSha256?: string): Promise<void> {
+async function downloadRuntimeBinary(
+  url: string,
+  filePath: string,
+  expectedSha256?: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const fileName = fileNameFromUrl(url);
   const binaryName = getRuntimeBinaryName(fileName);
   const isArchive = isRuntimeArchive(fileName);
@@ -205,40 +281,55 @@ async function downloadRuntimeBinary(url: string, filePath: string, expectedSha2
     throw new Error(`下载链接返回文件“${binaryName}”，不是可执行的 llama.cpp 运行时文件或运行时归档包。`);
   }
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`下载运行时失败（${url}）：HTTP ${response.status}`);
-  }
-
-  if (!response.body) {
-    throw new Error(`下载运行时失败（${url}）：响应体为空。`);
-  }
-
   const installDir = getRuntimeInstallDir(RUNTIME_BINARY_NAME);
-  const tempDir = `${installDir}.tmp-${Date.now()}`;
-  await mkdir(tempDir, { recursive: true });
-  const downloadPath = path.join(tempDir, fileName);
-  const destination = createWriteStream(downloadPath);
-  await pipeline(response.body as unknown as NodeJS.ReadableStream, destination);
-
-  await verifyDownloadChecksum(downloadPath, expectedSha256);
-  if (!isArchive) {
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await rename(downloadPath, filePath);
-    await ensureBinaryExecutable(filePath);
-    await rm(tempDir, { recursive: true, force: true });
-    return;
+  const tempDir = `${installDir}.tmp-${Date.now()}-${crypto.randomUUID()}`;
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) {
+    cancel();
+  } else {
+    signal?.addEventListener("abort", cancel, { once: true });
   }
+  const timeout = setTimeout(cancel, RUNTIME_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`下载运行时失败（${url}）：HTTP ${response.status}`);
+    }
+    if (!response.body) {
+      throw new Error(`下载运行时失败（${url}）：响应体为空。`);
+    }
 
-  await extractRuntimeArchive(downloadPath, tempDir);
-  const extractedCommand = await findRuntimeCommand(tempDir, getRuntimeBinaryName(RUNTIME_BINARY_NAME));
-  if (!extractedCommand) {
+    await mkdir(tempDir, { recursive: true });
+    const downloadPath = path.join(tempDir, fileName);
+    const destination = createWriteStream(downloadPath);
+    await pipeline(response.body as unknown as NodeJS.ReadableStream, destination);
+    await verifyDownloadChecksum(downloadPath, expectedSha256);
+    if (!isArchive) {
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await rename(downloadPath, filePath);
+      await ensureBinaryExecutable(filePath);
+      return;
+    }
+
+    await extractRuntimeArchive(downloadPath, tempDir);
+    const extractedCommand = await findRuntimeCommand(tempDir, getRuntimeBinaryName(RUNTIME_BINARY_NAME));
+    if (!extractedCommand) {
+      throw new Error("运行时归档包中未找到 llama-server。");
+    }
+    await ensureBinaryExecutable(extractedCommand);
+    await rm(installDir, { recursive: true, force: true });
+    await rename(tempDir, installDir);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(signal?.aborted ? "运行时下载已取消。" : "运行时下载超时。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
     await rm(tempDir, { recursive: true, force: true });
-    throw new Error("运行时归档包中未找到 llama-server。");
   }
-  await ensureBinaryExecutable(extractedCommand);
-  await rm(installDir, { recursive: true, force: true });
-  await rename(tempDir, installDir);
 }
 
 function isRuntimeArchive(fileName: string): boolean {
@@ -304,6 +395,7 @@ async function resolveRuntimeCommandWithDownload(
   runtimeDownloadUrl?: string,
   runtimeDownloadSha256?: string,
   allowDownload = true,
+  signal?: AbortSignal,
 ): Promise<string> {
   let trimmed = command.trim();
   if (!trimmed) {
@@ -354,7 +446,7 @@ async function resolveRuntimeCommandWithDownload(
 
   const runtimeDownloadSha256Value = getRuntimeDownloadChecksumCandidate(runtimeDownloadSha256);
   const target = getRuntimeCachePath(trimmed);
-  await downloadRuntimeBinary(downloadUrl, target, runtimeDownloadSha256Value);
+  await downloadRuntimeBinary(downloadUrl, target, runtimeDownloadSha256Value, signal);
   const installed = await findCachedRuntimeCommand(trimmed);
   if (!installed) {
     throw new Error("运行时下载完成，但未找到可执行的 llama-server。");
@@ -433,6 +525,18 @@ function createModelScopeManager(): ModelScopeManager {
   });
 }
 
+/** Removes retired model revisions and abandoned partials before background work starts. */
+async function pruneRetiredModelCache(): Promise<void> {
+  const allowedModelIds = localModelProfiles.flatMap((profile) => [
+    profile.model.url,
+    ...(profile.auxiliaryModels?.map((model) => model.url) ?? []),
+  ]);
+  const deleted = await getModelScopeManager("local").pruneCache(allowedModelIds);
+  if (deleted > 0) {
+    console.info(`Removed ${deleted} retired or stale model cache artifact(s).`);
+  }
+}
+
 function sendModelScopeDownloadProgress(
   requestId: string,
   modelId: string,
@@ -466,14 +570,28 @@ function getPddService(): PddService {
   return pddService;
 }
 
-async function processInboundQueue(): Promise<void> {
-  if (inboundQueueProcessing) {
-    return;
+function processInboundQueue(): Promise<void> {
+  if (inboundQueueTask || isShuttingDown) {
+    return inboundQueueTask ?? Promise.resolve();
   }
-  inboundQueueProcessing = true;
+  const task = drainInboundQueue()
+    .catch((error) => {
+      console.error("Inbound queue processing failed", sanitizeUserFacingError(error instanceof Error ? error.message : String(error)));
+    })
+    .finally(() => {
+      if (inboundQueueTask === task) {
+        inboundQueueTask = undefined;
+      }
+    });
+  inboundQueueTask = task;
+  return task;
+}
+
+/** Drains one shared inbound-queue worker until no ready work remains. */
+async function drainInboundQueue(): Promise<void> {
   try {
     const store = await getStore();
-    while (true) {
+    while (!isShuttingDown) {
       const settings = await store.getSettings();
       const limit = Math.max(1, settings.queue?.maxConcurrentConversations ?? 2);
       const claimed = await store.claimNextInboundMessages({ limit });
@@ -501,7 +619,10 @@ async function processInboundQueue(): Promise<void> {
                 sendGoodsLink: sendGoodsLinkTool,
                 transferConversation: transferConversationTool,
                 sendReply: async (context, text) => {
-                  await sendPddMessageGoverned(context.id, text);
+                  const result = await sendPddMessageGoverned(context.id, text);
+                  if (!result.ok) {
+                    throw new Error(result.error ?? "PDD text reply failed.");
+                  }
                 },
               },
             );
@@ -530,8 +651,9 @@ async function processInboundQueue(): Promise<void> {
       );
     }
   } finally {
-    inboundQueueProcessing = false;
-    void scheduleInboundQueueWakeup();
+    if (!isShuttingDown) {
+      void scheduleInboundQueueWakeup();
+    }
   }
 }
 
@@ -550,11 +672,14 @@ async function runGoverned<T>(dependencyId: DependencyId, operation: () => Promi
   }
 }
 
+/** Applies dependency governance consistently to every Model Provider operation. */
 function governChatClient(client: ChatInferenceClient): ChatInferenceClient {
   return {
-    chat: (prompt) => runGoverned("llm", () => client.chat(prompt)),
-    respond: (request) => runGoverned("llm", () => client.respond(request)),
+    chat: (prompt, options) => runGoverned("llm", () => client.chat(prompt, options)),
+    chatMultimodal: (request, options) => runGoverned("llm", () => client.chatMultimodal(request, options)),
+    respond: (request, options) => runGoverned("llm", () => client.respond(request, options)),
     healthCheck: () => runGoverned("llm", () => client.healthCheck()),
+    quickCheck: () => runGoverned("llm", () => client.quickCheck()),
   };
 }
 
@@ -601,13 +726,11 @@ async function sendGoodsLinkTool(
     // live, logged-in PDD page so PDD attaches a valid anti-content and the full
     // cookie set. The plain Node-fetch path is rejected by risk control (-12).
     // ponytail: launches a browser context per send; pool/reuse per account if send throughput matters.
-    const browserApi = await createBrowserBackedPddApiForAccount(account, antiContent);
-    let result: { ok: boolean; error?: string };
-    try {
-      result = await browserApi.api.sendGoodsCard(context.buyerId, goodsId, { antiContent });
-    } finally {
-      await browserApi.close();
-    }
+    const result = await withBrowserBackedPddApiForAccount(
+      account,
+      antiContent,
+      (api) => api.sendGoodsCard(context.buyerId, goodsId, { antiContent }),
+    );
     if (!result.ok) {
       return { ok: false, content: "", error: result.error ?? "商品卡片发送失败。" };
     }
@@ -660,6 +783,9 @@ function buildQueueFailurePolicy(settings: AppSettings): { maxAttempts?: number;
 }
 
 async function scheduleInboundQueueWakeup(): Promise<void> {
+  if (isShuttingDown) {
+    return;
+  }
   if (inboundQueueWakeup) {
     clearTimeout(inboundQueueWakeup);
     inboundQueueWakeup = undefined;
@@ -680,144 +806,113 @@ async function scheduleInboundQueueWakeup(): Promise<void> {
   }, delay);
 }
 
+/** Registers an IPC handler that only accepts calls from the application's trusted renderer. */
 function handle<TChannel extends IpcChannel>(
   channel: TChannel,
   listener: (request: IpcRequest<TChannel>) => Promise<IpcResponse<TChannel>> | IpcResponse<TChannel>,
 ) {
-  ipcMain.handle(channel, async (_event, request: IpcRequest<TChannel>) => listener(request));
+  ipcMain.handle(channel, async (event, request: IpcRequest<TChannel>) => {
+    if (!isTrustedRendererUrl(
+      event.senderFrame?.url ?? event.sender.getURL(),
+      resolveDevServerUrl(app.isPackaged, process.env.VITE_DEV_SERVER_URL),
+      rendererEntryUrl.href,
+    )) {
+      throw new Error("Rejected IPC request from an untrusted renderer origin.");
+    }
+    if (isShuttingDown) {
+      throw new Error("Application is shutting down.");
+    }
+    const operation = Promise.resolve().then(() => listener(request));
+    activeIpcTasks.add(operation);
+    try {
+      return await operation;
+    } finally {
+      activeIpcTasks.delete(operation);
+    }
+  });
 }
 
+/** Provider-independent model operations exposed to desktop business workflows. */
 interface ChatInferenceClient {
-  chat(prompt: string): Promise<string>;
-  respond(request: ResponseModelRequest): Promise<ResponseModelResult>;
+  chat(prompt: string, options?: { signal?: AbortSignal }): Promise<string>;
+  chatMultimodal(request: MultimodalChatRequest, options?: { signal?: AbortSignal }): Promise<string>;
+  respond(request: ResponseModelRequest, options?: { signal?: AbortSignal }): Promise<ResponseModelResult>;
   healthCheck(): Promise<void>;
+  quickCheck(): Promise<void>;
 }
 
-function isLocalInferenceBaseUrl(baseUrl: string): boolean {
-  try {
-    const url = new URL(baseUrl);
-    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-  } catch {
-    return true;
-  }
-}
-
-function isLocalModelIdentifier(model: string): boolean {
-  return /(^https?:\/\/|\.gguf(?:$|[?#])|runtime-models|modelscope\.cn)/iu.test(model.trim());
-}
-
-function resolveModelProvider(settings: AppSettings): "local" | "remote" {
-  if (settings.modelProvider) {
-    return settings.modelProvider;
-  }
-  return settings.inference && !isLocalInferenceBaseUrl(settings.inference.baseUrl) ? "remote" : "local";
-}
-
-// ponytail: 仅开发期的 env 覆盖。打包(app.isPackaged)时一律忽略，key 不会泄进
-// 生产/CI；调试期把 DashScope/千问的 baseUrl+key+model 写进 env 即可直接生效，
-// 不必每次在 UI 里填、也不写进加密 settings。
-function envInferenceConfigOverride(): { baseUrl: string; apiKey: string; chatModel: string } | undefined {
-  if (app.isPackaged) {
-    return undefined;
-  }
-  const baseUrl = process.env.CUSTOMER_AGENT_LLM_BASE_URL?.trim();
-  const apiKey = process.env.CUSTOMER_AGENT_LLM_API_KEY?.trim();
-  const chatModel = process.env.CUSTOMER_AGENT_LLM_MODEL?.trim();
-  if (!baseUrl || !apiKey || !chatModel) {
-    return undefined;
-  }
-  return { baseUrl, apiKey, chatModel };
-}
-
-async function readDocumentText(filePath: string): Promise<string> {
-  const ext = path.extname(filePath).toLowerCase();
-  if ([".pdf", ".docx", ".doc"].includes(ext)) {
-    throw new Error(`${ext} 解析需要额外依赖（mammoth/pdf-parse），当前仅支持 txt/md/json。`);
-  }
-  const raw = await readFile(filePath, "utf8");
-  return ext === ".json" ? JSON.stringify(JSON.parse(raw), null, 2) : raw;
-}
-
-async function createInferenceClient(): Promise<ChatInferenceClient> {
+/** Creates a governed client for the selected Model Provider and requested capability. */
+async function createInferenceClient(
+  capability: ModelProviderCapability = "chat",
+  requestId = `model-provider-${Date.now()}`,
+  maxTokens?: number,
+): Promise<ChatInferenceClient> {
+  const runtimeStart = captureRuntimeStart();
   const store = await getStore();
   const settings = await store.getSettings();
-  const envOverride = envInferenceConfigOverride();
-  if (envOverride) {
-    return governChatClient(new OpenAICompatibleClient({
-      ...envOverride,
-      temperature: settings.inference?.temperature ?? 0.3,
-      maxTokens: settings.inference?.maxTokens ?? 1000,
-    }));
-  }
-  if (resolveModelProvider(settings) === "local") {
-    const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-    return governChatClient(new OpenAICompatibleClient({
-      baseUrl: getRuntimeBaseUrl(runtime),
-      chatModel: runtime.modelId,
-      temperature: settings.inference?.temperature ?? 0.3,
-      maxTokens: settings.inference?.maxTokens ?? 1000,
-    }));
-  }
-  if (!settings.inference) {
-    const error = new Error("请先在模型设置中配置 OpenAI 兼容 endpoint。");
-    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
-      error: error.message,
-    });
-    throw error;
-  }
-  if (!settings.inference.baseUrl.trim() || !settings.inference.chatModel.trim()) {
-    const error = new Error("OpenAI 兼容 endpoint 配置不完整。");
-    await appendDiagnostic(store, "inference", "missing_endpoint_config", {
-      baseUrl: settings.inference.baseUrl,
-      chatModel: settings.inference.chatModel,
-      error: error.message,
-    });
-    throw error;
-  }
-  if (isLocalInferenceBaseUrl(settings.inference.baseUrl) || isLocalModelIdentifier(settings.inference.chatModel)) {
-    const error = new Error("当前选择的是远端 API，但 endpoint 或模型仍指向本地运行时。请切换为本地模型，或填写真实远端 API URL 和模型名。");
+  try {
+    const provider = resolveModelProviderConfig(settings, capability);
+    if (provider.kind === "local") {
+      const runtime = await getRuntimeConfigFromRequest({ modelId: provider.runtime.modelId });
+      await ensureManagedRuntimeReady(runtime, requestId, runtimeStart);
+    }
+    return governChatClient(new OpenAICompatibleClient(maxTokens ? { ...provider.config, maxTokens } : provider.config));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     await appendDiagnostic(store, "inference", "provider_config_mismatch", {
-      baseUrl: settings.inference.baseUrl,
-      chatModel: settings.inference.chatModel,
-      error: error.message,
+      provider: resolveModelProvider(settings),
+      capability,
+      error: sanitizeUserFacingError(message),
     });
     throw error;
   }
-  return governChatClient(new OpenAICompatibleClient(settings.inference));
 }
 
+/** Creates a side-effect-free health client without downloading or starting a local runtime. */
+async function createInferenceHealthClient(): Promise<ChatInferenceClient> {
+  const settings = await (await getStore()).getSettings();
+  const provider = resolveModelProviderConfig(settings, "chat");
+  if (provider.kind === "local") {
+    if (!getRuntimeProcessManager().status().running) {
+      throw new Error("本地 AI 尚未启动。");
+    }
+    const runtime = await getRuntimeConfigFromRequest({ modelId: provider.runtime.modelId });
+    return new OpenAICompatibleClient({
+      ...provider.config,
+      baseUrl: getRuntimeBaseUrl(runtime),
+      chatModel: runtime.modelId,
+    });
+  }
+  return new OpenAICompatibleClient(provider.config);
+}
+
+/** Creates product extraction through the currently selected Model Provider. */
 async function createProductKnowledgeExtractor(
   requestId: string,
+  signal?: AbortSignal,
 ): Promise<(input: ProductKnowledgeExtractionInput) => Promise<ProductKnowledgeExtractionResult>> {
   const store = await getStore();
   const settings = await store.getSettings();
-  const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-  if (!runtimeConfigSupportsLocalCapability(runtime, "vision")) {
-    throw new Error("当前本地模型档案不支持商品图片理解。请选择带 vision 能力和 mmproj 的本地多模态模型后再同步商品。");
-  }
-  await ensureManagedRuntimeReady(runtime, requestId);
-  const profile = getLocalModelProfileForRuntime(runtime);
-  const client = new OpenAICompatibleClient({
-    baseUrl: getRuntimeBaseUrl(runtime),
-    chatModel: runtime.modelId,
-    temperature: 0.2,
-    maxTokens: 1400,
-  });
+  const provider = resolveModelProviderConfig(settings, "multimodal");
+  const client = await createInferenceClient("multimodal", requestId);
 
   return async (input) => {
+    if (signal?.aborted) {
+      throw new Error("商品同步已取消。");
+    }
     const imageUrls = collectProductImageUrls(input);
-    const raw = await runGoverned("llm", () => client.chatMultimodal({
+    const raw = await client.chatMultimodal({
       system: PRODUCT_KNOWLEDGE_EXTRACTION_SYSTEM_PROMPT,
       text: buildProductExtractionPrompt(input),
       imageUrls,
       responseFormat: "json_object",
-    }));
+    }, signal ? { signal } : undefined);
     return {
       content: formatProductExtractionContent(input.baseContent, raw),
       tags: buildProductExtractionTags(raw),
       sourceMetadata: {
-        extractionModel: runtime.modelId,
-        localProfileId: profile?.id ?? "",
+        extractionModel: provider.config.chatModel,
+        modelProvider: provider.kind,
         multimodal: true,
         imageCount: imageUrls.length,
       },
@@ -825,40 +920,62 @@ async function createProductKnowledgeExtractor(
   };
 }
 
-async function createBrowserBackedPddApiForAccount(
+/** Runs a PDD API operation inside the account's serialized persistent browser profile. */
+async function withBrowserBackedPddApiForAccount<T>(
   account: AccountRecord,
   antiContent: string,
-): Promise<{ api: PddApi; close(): Promise<void> }> {
+  operation: (api: PddApi) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (isShuttingDown || signal?.aborted) {
+    throw new Error("应用正在退出，已取消拼多多浏览器操作。");
+  }
   const playwright = await import("playwright");
-  const context = await playwright.chromium.launchPersistentContext(
-    path.join(app.getPath("userData"), "pdd-profiles", safePathSegment(account.username)),
-    {
+  const profileDir = await resolvePddProfileDir(app.getPath("userData"), account.username);
+  return withPddBrowserProfileLock(profileDir, async () => {
+    if (isShuttingDown || signal?.aborted) {
+      throw new Error("应用正在退出，已取消拼多多浏览器操作。");
+    }
+    const context = await playwright.chromium.launchPersistentContext(profileDir, {
       headless: true,
       args: [
         "--disable-gpu",
-        "--no-sandbox",
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
         "--disable-notifications",
       ],
-    },
-  );
-  const page = context.pages()[0] ?? await context.newPage();
-  await page.goto("https://mms.pinduoduo.com/home/", { waitUntil: "domcontentloaded" });
-  return {
-    api: new PddApi({
-      http: new PddBrowserHttpClient({
-        page,
-        antiContent,
-      }),
-    }),
-    close: async () => {
-      await context.close();
-    },
-  };
+    });
+    pddBrowserContexts.add(context);
+    const closeOnAbort = () => {
+      void context.close().catch(() => undefined);
+    };
+    signal?.addEventListener("abort", closeOnAbort, { once: true });
+    try {
+      if (isShuttingDown || signal?.aborted) {
+        throw new Error("应用正在退出，已取消拼多多浏览器操作。");
+      }
+      const page = context.pages()[0] ?? await context.newPage();
+      await page.goto("https://mms.pinduoduo.com/home/", { waitUntil: "domcontentloaded" });
+      return await operation(new PddApi({
+        http: new PddBrowserHttpClient({
+          page,
+          antiContent,
+        }),
+      }));
+    } finally {
+      signal?.removeEventListener("abort", closeOnAbort);
+      pddBrowserContexts.delete(context);
+      await context.close().catch(() => undefined);
+    }
+  });
 }
 
-async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, requestId: string): Promise<void> {
+async function ensureManagedRuntimeReady(
+  runtimeConfig: InferenceRuntimeConfig,
+  requestId: string,
+  start = captureRuntimeStart(),
+): Promise<void> {
+  assertRuntimeStartCurrent(start);
   const baseUrl = getRuntimeBaseUrl(runtimeConfig);
   const probe = new OpenAICompatibleClient({
     baseUrl,
@@ -866,14 +983,6 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
     temperature: 0,
     maxTokens: 16,
   });
-  try {
-    await probe.healthCheck();
-    return;
-  } catch {
-    // Start the managed runtime below. A running external endpoint on the same
-    // port will pass this probe and avoids spawning a duplicate process.
-  }
-
   if (!runtimeConfig.command) {
     throw new Error("推理运行命令不能为空。");
   }
@@ -881,7 +990,10 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
     runtimeConfig.command,
     runtimeConfig.runtimeDownloadUrl,
     runtimeConfig.runtimeDownloadSha256,
+    true,
+    start.signal,
   );
+  assertRuntimeStartCurrent(start);
   runtimeConfig.command = runtimeCommand;
 
   let modelPath = runtimeConfig.modelPath;
@@ -891,14 +1003,18 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
   if (!modelPath || !existsSync(modelPath)) {
     modelPath = await getModelScopeManager("local").ensureModel(runtimeConfig.modelId, {
       ...(profile?.model.sha256 ? { expectedSha256: profile.model.sha256 } : {}),
+      signal: start.signal,
       onProgress: (progress) => sendModelScopeDownloadProgress(requestId, runtimeConfig.modelId, progress),
     });
+    assertRuntimeStartCurrent(start);
   }
   if (mmproj && (!mmprojPath || !existsSync(mmprojPath))) {
     mmprojPath = await getModelScopeManager("local").ensureModel(mmproj.url, {
       ...(mmproj.sha256 ? { expectedSha256: mmproj.sha256 } : {}),
+      signal: start.signal,
       onProgress: (progress) => sendModelScopeDownloadProgress(requestId, mmproj.url, progress),
     });
+    assertRuntimeStartCurrent(start);
     runtimeConfig.mmprojModelId = mmproj.url;
   }
   if (!modelPath) {
@@ -913,6 +1029,7 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
     runtimeConfig.commandArgs,
     mmprojPath,
   );
+  assertRuntimeStartCurrent(start);
   await getRuntimeProcessManager().start({
     command: runtimeConfig.command,
     modelPath,
@@ -920,29 +1037,47 @@ async function ensureManagedRuntimeReady(runtimeConfig: InferenceRuntimeConfig, 
     host: runtimeConfig.host ?? "127.0.0.1",
     ...(runtimeArgs ? { args: runtimeArgs } : {}),
   });
-
-  const store = await getStore();
-  await store.saveSettings({
-    inference: {
-      ...(await store.getSettings()).inference,
-      baseUrl,
-      chatModel: runtimeConfig.modelId,
-    },
-    inferenceRuntime: {
-      ...runtimeConfig,
-      modelPath,
-      ...(mmprojPath ? { mmprojPath } : {}),
-    },
-  });
-  await waitForRuntimeHealth(probe);
+  try {
+    assertRuntimeStartCurrent(start);
+    await waitForRuntimeHealth(probe, 90_000, start);
+    assertRuntimeStartCurrent(start);
+    const store = await getStore();
+    await store.saveSettings({
+      inference: {
+        ...(await store.getSettings()).inference,
+        baseUrl,
+        chatModel: runtimeConfig.modelId,
+      },
+      inferenceRuntime: {
+        ...runtimeConfig,
+        modelPath,
+        ...(mmprojPath ? { mmprojPath } : {}),
+      },
+    });
+  } catch (error) {
+    if (start.generation === runtimeStartGeneration) {
+      await getRuntimeProcessManager().stop();
+    }
+    throw error;
+  }
 }
 
-async function waitForRuntimeHealth(client: OpenAICompatibleClient, timeoutMs = 90_000): Promise<void> {
+async function waitForRuntimeHealth(
+  client: OpenAICompatibleClient,
+  timeoutMs = 90_000,
+  start?: { generation: number; signal: AbortSignal },
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
   while (Date.now() < deadline) {
+    if (start) {
+      assertRuntimeStartCurrent(start);
+    }
     try {
       await client.healthCheck();
+      if (start) {
+        assertRuntimeStartCurrent(start);
+      }
       return;
     } catch (error) {
       lastError = error;
@@ -1073,20 +1208,56 @@ function faqArray(value: unknown): Array<{ question: string; answer: string }> {
 }
 
 async function getRuntimeConfigFromRequest(
-  request: Partial<InferenceRuntimeConfig> = {},
+  request: Pick<Partial<InferenceRuntimeConfig>, "modelId" | "modelPath" | "mmprojModelId" | "mmprojPath"> = {},
 ): Promise<InferenceRuntimeConfig> {
   const store = await getStore();
   const settings = await store.getSettings();
-  const normalized = normalizeLocalRuntimeConfig({
+  const requestedProfile = localModelProfiles.find((profile) => (
+    profile.id === request.modelId
+    || profile.model.id === request.modelId
+    || profile.model.url === request.modelId
+  ));
+  if (request.modelId && !requestedProfile) {
+    throw new Error("只能启动应用审核过的本地模型档案。");
+  }
+  const normalizedProfile = normalizeLocalRuntimeConfig({
     ...DEFAULT_RUNTIME,
     ...(settings.inferenceRuntime ?? {}),
-    ...request,
-    modelPath: request.modelPath ?? settings.inferenceRuntime?.modelPath ?? "",
+    ...(requestedProfile ? { modelId: requestedProfile.model.url } : {}),
   });
-  if (settings.inferenceRuntime?.runtimeKind !== normalized.runtimeKind || settings.inferenceRuntime?.modelId !== normalized.modelId) {
+  const profile = getLocalModelProfileForRuntime(normalizedProfile);
+  if (!profile) {
+    throw new Error("只能启动应用审核过的本地模型档案。");
+  }
+  const mmproj = profile.auxiliaryModels?.find((item) => item.purpose === "mmproj");
+  const requestedModelPath = request.modelPath ?? normalizedProfile.modelPath;
+  const requestedMmprojPath = request.mmprojPath ?? normalizedProfile.mmprojPath;
+  const normalized: InferenceRuntimeConfig = {
+    runtimeKind: "managed_llama_server",
+    modelId: profile.model.url,
+    modelPath: isManagedModelCachePath(requestedModelPath) ? requestedModelPath : "",
+    command: RUNTIME_BINARY_NAME,
+    host: "127.0.0.1",
+    port: 8000,
+    ...(mmproj ? {
+      mmprojModelId: mmproj.url,
+      mmprojPath: isManagedModelCachePath(requestedMmprojPath) ? requestedMmprojPath ?? "" : "",
+    } : {}),
+  };
+  if (JSON.stringify(settings.inferenceRuntime) !== JSON.stringify(normalized)) {
     await store.saveSettings({ inferenceRuntime: normalized });
   }
   return normalized;
+}
+
+/** Checks that a model artifact belongs to the app-managed download cache. */
+function isManagedModelCachePath(candidate: string | undefined): candidate is string {
+  if (!candidate) {
+    return false;
+  }
+  const cacheRoot = path.resolve(getRuntimeDataDir(), "downloads");
+  const relative = path.relative(cacheRoot, path.resolve(candidate));
+  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 function getRuntimeBaseUrl(runtimeConfig: InferenceRuntimeConfig): string {
@@ -1140,10 +1311,6 @@ function setupIpc() {
     const store = await getStore();
     const result = await getPddService().login(request);
     if (!result.ok) {
-      await appendDiagnostic(store, "pdd", "session_expiry", {
-        username: request.username,
-        error: result.error ?? "拼多多登录失败",
-      });
       return result;
     }
     await appendDiagnostic(store, "pdd", "session_refresh", {
@@ -1156,7 +1323,7 @@ function setupIpc() {
 
   handle("account.list", async () => {
     const store = await getStore();
-    return { accounts: await store.listAccounts() };
+    return { accounts: (await store.listAccounts()).map(toRendererAccount) };
   });
 
   handle("account.start", async (request) => {
@@ -1190,7 +1357,15 @@ function setupIpc() {
   });
 
   handle("message.send", async (request) => {
-    return sendPddMessageGoverned(request.messageId, request.text);
+    const result = await sendPddMessageGoverned(request.messageId, request.text);
+    if (result.ok) {
+      const store = await getStore();
+      const message = await store.getMessage(request.messageId);
+      if (message) {
+        await recordPddSendSuccess(message, store);
+      }
+    }
+    return result;
   });
 
   handle("message.sendImage", async (request) => {
@@ -1271,151 +1446,192 @@ function setupIpc() {
       const options = {
         title: "选择要解析的文档",
         properties: ["openFile" as const],
-        // ponytail: txt/md/json read natively. pdf/docx need a parser dep
-        // (mammoth/pdf-parse) — add the filter + parse branch once it's installed.
-        filters: [{ name: "文档", extensions: ["txt", "md", "markdown", "json"] }],
+        filters: [{ name: "文档", extensions: ["docx", "xlsx", "pptx", "txt", "md", "markdown", "json"] }],
       };
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       if (result.canceled || !result.filePaths[0]) {
         return { ok: true, canceled: true };
       }
-      return { ok: true, filePath: result.filePaths[0], fileName: path.basename(result.filePaths[0]) };
+      return { ok: true, ...documentHandles.issue(result.filePaths[0]) };
     } catch (error) {
       return { ok: false, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
     }
   });
 
   handle("knowledge.document.import", async (request) => {
+    const document = documentHandles.consume(request.documentId);
+    if (!document) {
+      return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: "文档选择已失效，请重新选择文件。" };
+    }
+    let text: string;
     try {
-      const text = await readDocumentText(request.filePath);
+      text = await readDocumentText(document.filePath);
       if (!text.trim()) {
-        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "文档为空或无法解析出文本。" };
+        return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: "文件读取失败：文档中没有可提取的文本。" };
       }
-      const client = await createInferenceClient();
-      const rows = await extractKnowledgeEntries(text, client);
-      if (!rows.length) {
-        return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: "未能从文档中抽取出知识条目。" };
+    } catch {
+      return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: "文件读取失败：请确认文件仍可访问且格式有效。" };
+    }
+    try {
+      // 提取输出体量约等于片段原文，默认 1000 token 会截断 JSON
+      const client = await createInferenceClient("chat", `knowledge-extract-${Date.now()}`, 3000);
+      const fileName = document.basename;
+      const result = await extractKnowledgeEntries(text, client, (progress) => {
+        mainWindow?.webContents.send("knowledge.document.progress", { ...progress, requestId: request.requestId, fileName });
+      });
+      if (!result.entries.length) {
+        const details = result.failures.slice(0, 3).map((failure) => `第 ${failure.segment} 段：${failure.error}`).join("；");
+        return {
+          ok: false,
+          entries: [],
+          segmentsTotal: result.total,
+          segmentsCompleted: result.completed,
+          failures: result.failures,
+          error: details ? `AI 知识提取失败：${details}` : "未从文档中提取到有效知识条目（文档内容可能不含客服知识）。",
+        };
       }
-      const store = await getStore();
-      const result = await store.importCustomerServiceKnowledgeRows({ shopId: request.shopId, rows, reviewState: "draft" });
-      return { ok: true, entries: rows.length, ...result };
+      return {
+        ok: true,
+        fileName,
+        fileType: path.extname(document.basename).slice(1).toLowerCase(),
+        entries: result.entries,
+        segmentsTotal: result.total,
+        segmentsCompleted: result.completed,
+        failures: result.failures,
+      };
     } catch (error) {
-      return { ok: false, created: 0, skippedDuplicates: 0, failed: 0, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
+      return { ok: false, entries: [], segmentsTotal: 0, segmentsCompleted: 0, failures: [], error: `AI 知识提取失败：${sanitizeUserFacingError(error instanceof Error ? error.message : String(error))}` };
     }
   });
 
-	  handle("product.sync.start", async (request) => {
-	    try {
-	      const store = await getStore();
-	      const account = (await store.listAccounts()).find((item) => item.id === request.accountId);
+  handle("product.sync.start", async (request) => {
+    try {
+      const store = await getStore();
+      const account = (await store.listAccounts()).find((item) => item.id === request.accountId);
       if (!account) {
         return { ok: false, error: "未找到账户。" };
       }
-	      if (!account.cookies) {
-	        return { ok: false, error: "账户缺少可用会话，请先完成真实拼多多登录。" };
-	      }
+      if (!account.cookies) {
+        return { ok: false, error: "账户缺少可用会话，请先完成真实拼多多登录。" };
+      }
 
-	      const runId = `product-sync-${request.accountId}-${Date.now()}`;
-	      const controller = new AbortController();
-	      productSyncControllers.set(runId, controller);
+      const activeRunId = productSyncAccountRuns.get(request.accountId);
+      if (activeRunId && productSyncTasks.has(activeRunId)) {
+        return { ok: false, error: "该账号已有商品同步任务在运行。" };
+      }
+      const runId = `product-sync-${request.accountId}-${crypto.randomUUID()}`;
+      const controller = new AbortController();
+      productSyncControllers.set(runId, controller);
+      productSyncAccountRuns.set(request.accountId, runId);
 
-	      const initial: ProductSyncProgress = {
-	        runId,
-	        shopId: account.shopId,
-	        mode: request.mode,
-	        phase: "fetching",
+      const initial: ProductSyncProgress = {
+        runId,
+        shopId: account.shopId,
+        mode: request.mode,
+        phase: "fetching",
         total: 0,
         current: 0,
         added: 0,
         updated: 0,
-	        skipped: 0,
-	        failed: 0,
-	        failures: [],
-	      };
-	      updateProductSyncProgress(initial);
-	      void runGoverned("product_sync", async () => {
-	        let syncAccount = account;
-	        let cookies = parseCookieJar(syncAccount.cookies);
-	        let antiContent = cookies.anti_content ?? cookies["anti-content"];
-	        if (!antiContent?.trim()) {
-	          await store.appendLog("info", "商品同步缺少 anti-content，正在自动刷新拼多多浏览器会话。");
-	          const refreshed = await getPddService().refreshAccountSession(syncAccount.id);
-	          if (!refreshed.ok || !refreshed.account?.cookies) {
-	            throw new Error(refreshed.error ?? "自动刷新 PDD 会话失败，请在账号页重新登录后再同步商品。");
-	          }
-	          syncAccount = refreshed.account;
-	          cookies = parseCookieJar(syncAccount.cookies);
-	          antiContent = cookies.anti_content ?? cookies["anti-content"];
-	          await store.appendLog("info", `商品同步会话刷新完成：antiContent=${antiContent ? "present" : "missing"}`);
-	          if (!antiContent?.trim()) {
-	            throw new Error("自动刷新 PDD 会话后仍缺少商品接口所需的 anti-content，请在账号页重新登录后再同步商品。");
-	          }
-	        }
-	        const browserApi = await createBrowserBackedPddApiForAccount(syncAccount, antiContent);
-	        try {
-	          const extractProductKnowledge = await createProductKnowledgeExtractor(runId);
-	          const service = new PddProductSyncService({
-	            api: browserApi.api,
-	            shopId: syncAccount.shopId,
-	            ...optionalString("antiContent", antiContent),
-	            extractProductKnowledge,
-	            isKnownProduct: async (goodsId) => {
-	              const records = await store.listGovernedKnowledge({
-	                kind: "product",
-	                shopId: syncAccount.shopId,
-	                citationId: `product:${syncAccount.shopId}:${goodsId}`,
-	              });
-	              return records.length > 0;
-	            },
-	            saveProductKnowledge: async ({ product, content, tags, sourceMetadata }) => store.saveGovernedKnowledge({
-	              kind: "product",
-	              shopId: syncAccount.shopId,
-	              title: product.goodsName || product.goodsId,
-	              content,
-	              tags,
-	              sourceType: "pdd_product",
-	              sourceId: product.goodsId,
-	              sourceMetadata,
-	              reviewState: "draft",
-	              enabled: false,
-	              stale: false,
-	              conflict: false,
-	            }),
-	            onProgress: (progress) => updateProductSyncProgress(progress),
-	          });
-	          const run = await service.sync({
-	            mode: request.mode,
-	            runId,
-	            signal: controller.signal,
-	            ...optionalNumber("pageSize", request.pageSize),
-	            ...optionalNumber("maxPages", request.maxPages),
-	          });
-	          productSyncControllers.delete(runId);
-	          if (run.failures.length) {
-	            await appendDiagnostic(store, "knowledge", "product_sync_failure", {
-	              shopId: syncAccount.shopId,
-	              runId,
-	              failures: String(run.failures.length),
-	              error: run.failures[0]?.error ?? "商品同步失败",
-	            });
-	          }
-	          await store.appendLog("info", `商品同步结束：${run.phase}，新增 ${run.added}，更新 ${run.updated}，跳过 ${run.skipped}，失败 ${run.failed}`);
-	          return run;
-	        } finally {
-	          await browserApi.close();
-	        }
-	      }).catch(async (error) => {
-	        productSyncControllers.delete(runId);
-	        const failed = {
-	          ...initial,
-	          phase: "failed" as const,
-	          failed: 1,
-	          failures: [{ error: error instanceof Error ? error.message : String(error), retryable: true }],
-	        };
-	        updateProductSyncProgress(failed);
-	      });
-	      return { ok: true, run: initial };
-	    } catch (error) {
+        skipped: 0,
+        failed: 0,
+        failures: [],
+      };
+      updateProductSyncProgress(initial);
+      const task = runGoverned("product_sync", async () => {
+        let syncAccount = account;
+        let cookies = parseCookieJar(syncAccount.cookies);
+        let antiContent = cookies.anti_content ?? cookies["anti-content"];
+        if (!antiContent?.trim()) {
+          await store.appendLog("info", "商品同步缺少 anti-content，正在自动刷新拼多多浏览器会话。");
+          const refreshed = await getPddService().refreshAccountSession(syncAccount.id);
+          if (!refreshed.ok || !refreshed.account?.cookies) {
+            throw new Error(refreshed.error ?? "自动刷新 PDD 会话失败，请在账号页重新登录后再同步商品。");
+          }
+          syncAccount = refreshed.account;
+          cookies = parseCookieJar(syncAccount.cookies);
+          antiContent = cookies.anti_content ?? cookies["anti-content"];
+          await store.appendLog("info", `商品同步会话刷新完成：antiContent=${antiContent ? "present" : "missing"}`);
+          if (!antiContent?.trim()) {
+            throw new Error("自动刷新 PDD 会话后仍缺少商品接口所需的 anti-content，请在账号页重新登录后再同步商品。");
+          }
+        }
+        await withBrowserBackedPddApiForAccount(syncAccount, antiContent, async (api) => {
+          const extractProductKnowledge = await createProductKnowledgeExtractor(runId, controller.signal);
+          const service = new PddProductSyncService({
+            api,
+            shopId: syncAccount.shopId,
+            ...optionalString("antiContent", antiContent),
+            extractProductKnowledge,
+            isKnownProduct: async (goodsId) => {
+              const records = await store.listGovernedKnowledge({
+                kind: "product",
+                shopId: syncAccount.shopId,
+                citationId: `product:${syncAccount.shopId}:${goodsId}`,
+              });
+              return records.length > 0;
+            },
+            saveProductKnowledge: async ({ product, content, tags, sourceMetadata }) => store.saveGovernedKnowledge({
+              kind: "product",
+              shopId: syncAccount.shopId,
+              title: product.goodsName || product.goodsId,
+              content,
+              tags,
+              sourceType: "pdd_product",
+              sourceId: product.goodsId,
+              sourceMetadata,
+              reviewState: "draft",
+              enabled: false,
+              stale: false,
+              conflict: false,
+            }),
+            onProgress: (progress) => updateProductSyncProgress(progress),
+          });
+          const run = await service.sync({
+            mode: request.mode,
+            runId,
+            signal: controller.signal,
+            ...optionalNumber("pageSize", request.pageSize),
+            ...optionalNumber("maxPages", request.maxPages),
+          });
+          const sanitizedRun = sanitizeProductSyncProgress(run);
+          updateProductSyncProgress(sanitizedRun);
+          if (sanitizedRun.failures.length) {
+            await appendDiagnostic(store, "knowledge", "product_sync_failure", {
+              shopId: syncAccount.shopId,
+              runId,
+              provider: resolveModelProvider(await store.getSettings()),
+              failures: String(sanitizedRun.failures.length),
+              error: sanitizedRun.failures[0]?.error ?? "商品同步失败",
+            });
+          }
+          await store.appendLog("info", `商品同步结束：${run.phase}，新增 ${run.added}，更新 ${run.updated}，跳过 ${run.skipped}，失败 ${run.failed}`);
+          return run;
+        }, controller.signal);
+      })
+        .then(() => undefined)
+        .catch((error) => {
+          const cancelled = controller.signal.aborted;
+          updateProductSyncProgress({
+            ...initial,
+            phase: cancelled ? "cancelled" : "failed",
+            failed: cancelled ? 0 : 1,
+            failures: cancelled ? [] : [{
+              error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)),
+              retryable: true,
+            }],
+          });
+        })
+        .finally(() => {
+          productSyncControllers.delete(runId);
+          productSyncTasks.delete(runId);
+          if (productSyncAccountRuns.get(request.accountId) === runId) {
+            productSyncAccountRuns.delete(request.accountId);
+          }
+        });
+      productSyncTasks.set(runId, task);
+      return { ok: true, run: initial };
+    } catch (error) {
       return { ok: false, error: sanitizeUserFacingError(error instanceof Error ? error.message : String(error)) };
     }
   });
@@ -1444,21 +1660,27 @@ function setupIpc() {
 
   handle("inference.modelscope.download", async (request) => {
     try {
+      const start = replaceRuntimeProvisioning();
       const requestId = request.requestId ?? crypto.randomUUID();
-      const profile = localModelProfiles.find(
-        (item) => item.model.url === request.modelId || item.model.id === request.modelId,
-      );
-      const modelPath = await getModelScopeManager("local").ensureModel(request.modelId, {
-        ...(request.expectedSha256 ? { expectedSha256: request.expectedSha256 } : {}),
-        onProgress: (progress) => sendModelScopeDownloadProgress(requestId, request.modelId, progress),
+      const profile = getLocalModelProfileForRuntime({ modelId: request.modelId });
+      if (!profile) {
+        throw new Error("只能下载应用提供的 ModelScope 多模态模型。");
+      }
+      const modelPath = await getModelScopeManager("local").ensureModel(profile.model.url, {
+        ...(profile.model.sha256 ? { expectedSha256: profile.model.sha256 } : {}),
+        signal: start.signal,
+        onProgress: (progress) => sendModelScopeDownloadProgress(requestId, profile.model.url, progress),
       });
+      assertRuntimeStartCurrent(start);
       const mmproj = profile?.auxiliaryModels?.find((item) => item.purpose === "mmproj");
       const mmprojPath = mmproj
         ? await getModelScopeManager("local").ensureModel(mmproj.url, {
             ...(mmproj.sha256 ? { expectedSha256: mmproj.sha256 } : {}),
+            signal: start.signal,
             onProgress: (progress) => sendModelScopeDownloadProgress(requestId, mmproj.url, progress),
           })
         : undefined;
+      assertRuntimeStartCurrent(start);
       const store = await getStore();
       const config = await getRuntimeConfigFromRequest({
         modelId: request.modelId,
@@ -1467,7 +1689,7 @@ function setupIpc() {
         ...(mmprojPath ? { mmprojPath } : {}),
       });
       await store.saveSettings({ inferenceRuntime: config });
-      return { ok: true, modelPath, ...(mmprojPath ? { mmprojPath } : {}) };
+      return toRendererModelDownloadResult({ ok: true, modelPath, ...(mmprojPath ? { mmprojPath } : {}) });
     } catch (error) {
       const message = toSafeRuntimeError(error);
       const store = await getStore();
@@ -1475,22 +1697,41 @@ function setupIpc() {
         modelId: request.modelId,
         error: message,
       });
-      return { ok: false, modelPath: "", error: sanitizeUserFacingError(message) };
+      return toRendererModelDownloadResult({ ok: false, error: sanitizeUserFacingError(message) });
     }
   });
 
   handle("inference.model.delete", async (request) => {
     try {
-      const modelIds = [...new Set([request.modelId, ...(request.auxiliaryModelIds ?? [])])];
+      const profile = localModelProfiles.find((item) => (
+        item.id === request.modelId
+        || item.model.id === request.modelId
+        || item.model.url === request.modelId
+      ));
+      if (!profile) {
+        throw new Error("只能删除应用审核过的本地模型档案。");
+      }
+      const auxiliaryModels = profile.auxiliaryModels ?? [];
+      const requestedAuxiliaryIds = request.auxiliaryModelIds ?? [];
+      if (requestedAuxiliaryIds.some((modelId) => !auxiliaryModels.some((item) => item.id === modelId || item.url === modelId))) {
+        throw new Error("只能删除当前审核模型档案的辅助模型。");
+      }
+      const requestedAuxiliaryUrls = requestedAuxiliaryIds.map((modelId) => (
+        auxiliaryModels.find((item) => item.id === modelId || item.url === modelId)!.url
+      ));
+      const modelIds = [...new Set([profile.model.url, ...requestedAuxiliaryUrls])];
+      cancelRuntimeProvisioning();
+      const store = await getStore();
+      const runtime = await getRuntimeConfigFromRequest();
+      const shouldClearModelPath = runtime.modelId === profile.model.url;
+      const shouldClearMmprojPath = Boolean(runtime.mmprojModelId && requestedAuxiliaryUrls.includes(runtime.mmprojModelId));
+      if ((shouldClearModelPath || shouldClearMmprojPath) && getRuntimeProcessManager().status().running) {
+        await getRuntimeProcessManager().stop();
+      }
       const manager = getModelScopeManager("local");
       const deleteResults = await Promise.all(modelIds.map((modelId) => manager.deleteModel(modelId)));
       const deleted = deleteResults.filter(Boolean).length;
 
-      const store = await getStore();
-      const settings = await store.getSettings();
-      const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-      const shouldClearModelPath = runtime.modelId === request.modelId;
-      const shouldClearMmprojPath = Boolean(runtime.mmprojModelId && (request.auxiliaryModelIds ?? []).includes(runtime.mmprojModelId));
       if (shouldClearModelPath || shouldClearMmprojPath) {
         await store.saveSettings({
           inferenceRuntime: {
@@ -1514,6 +1755,7 @@ function setupIpc() {
 
   handle("inference.runtime.prepare", async () => {
     try {
+      const start = replaceRuntimeProvisioning();
       const runtimeConfig = await getRuntimeConfigFromRequest();
       if (!runtimeConfig.command) {
         throw new Error("推理运行命令不能为空。");
@@ -1522,116 +1764,36 @@ function setupIpc() {
         runtimeConfig.command,
         runtimeConfig.runtimeDownloadUrl,
         runtimeConfig.runtimeDownloadSha256,
+        true,
+        start.signal,
       );
+      assertRuntimeStartCurrent(start);
       const store = await getStore();
       const nextRuntime = {
         ...runtimeConfig,
         command: runtimeCommand,
       };
       await store.saveSettings({ inferenceRuntime: nextRuntime });
-      return { ok: true, runtimeCommand };
+      return toRendererRuntimePrepareResult({ ok: true, runtimeCommand });
     } catch (error) {
       const message = toSafeRuntimeError(error);
       const store = await getStore();
       await appendDiagnostic(store, "inference", "runtime_prepare_failure", {
         error: message,
       });
-      return { ok: false, error: sanitizeUserFacingError(message) };
+      return toRendererRuntimePrepareResult({ ok: false, error: sanitizeUserFacingError(message) });
     }
   });
 
   handle("inference.runtime.start", async (request) => {
     try {
-      const requestConfig = request === undefined ? {} : request;
-      const { requestId, ...runtimeRequestConfig } = requestConfig;
-      const runtimeConfig = await getRuntimeConfigFromRequest(runtimeRequestConfig);
-      if (!runtimeConfig.command) {
-        throw new Error("推理运行命令不能为空。");
-      }
-      const runtimeCommand = await resolveRuntimeCommandWithDownload(
-        runtimeConfig.command,
-        runtimeConfig.runtimeDownloadUrl,
-        runtimeConfig.runtimeDownloadSha256,
+      const start = replaceRuntimeProvisioning();
+      const runtimeConfig = await getRuntimeConfigFromRequest(
+        request?.modelId ? { modelId: request.modelId } : {},
       );
-      runtimeConfig.command = runtimeCommand;
-      let modelPath = runtimeConfig.modelPath;
-      let mmprojPath = runtimeConfig.mmprojPath;
-      const profile = localModelProfiles.find(
-        (item) => item.model.url === runtimeConfig.modelId || item.model.id === runtimeConfig.modelId,
-      );
-      const mmproj = profile?.auxiliaryModels?.find((item) => item.purpose === "mmproj");
-      if (!modelPath || !existsSync(modelPath)) {
-        const progressRequestId = requestId ?? crypto.randomUUID();
-        modelPath = await getModelScopeManager("local").ensureModel(runtimeConfig.modelId, {
-          ...(profile?.model.sha256 ? { expectedSha256: profile.model.sha256 } : {}),
-          onProgress: (progress) => sendModelScopeDownloadProgress(
-            progressRequestId,
-            runtimeConfig.modelId,
-            progress,
-          ),
-        });
-      }
-      if (mmproj && (!mmprojPath || !existsSync(mmprojPath))) {
-        const progressRequestId = requestId ?? crypto.randomUUID();
-        mmprojPath = await getModelScopeManager("local").ensureModel(mmproj.url, {
-          ...(mmproj.sha256 ? { expectedSha256: mmproj.sha256 } : {}),
-          onProgress: (progress) => sendModelScopeDownloadProgress(
-            progressRequestId,
-            mmproj.url,
-            progress,
-          ),
-        });
-        runtimeConfig.mmprojModelId = mmproj.url;
-      }
-
-      const store = await getStore();
-      const needsPersistRuntime =
-        runtimeConfig.modelPath !== modelPath
-        || runtimeConfig.command !== runtimeCommand
-        || runtimeConfig.mmprojPath !== mmprojPath
-        || (mmproj && runtimeConfig.mmprojModelId !== mmproj.url);
-      if (needsPersistRuntime) {
-        runtimeConfig.modelPath = modelPath;
-        runtimeConfig.command = runtimeCommand;
-        if (mmprojPath) {
-          runtimeConfig.mmprojPath = mmprojPath;
-        }
-        await store.saveSettings({ inferenceRuntime: runtimeConfig });
-      }
-
-      const runtimeArgs = inferRuntimeArgs(
-        runtimeConfig.command,
-        runtimeConfig.host ?? "127.0.0.1",
-        runtimeConfig.port ?? 8000,
-        modelPath,
-        runtimeConfig.commandArgs,
-        mmprojPath,
-      );
-
-      const status = await getRuntimeProcessManager().start({
-        command: runtimeConfig.command,
-        modelPath,
-        port: runtimeConfig.port ?? 8000,
-        host: runtimeConfig.host ?? "127.0.0.1",
-        ...(runtimeArgs ? { args: runtimeArgs } : {}),
-      });
-
+      await ensureManagedRuntimeReady(runtimeConfig, request?.requestId ?? crypto.randomUUID(), start);
+      const status = getRuntimeProcessManager().status();
       const baseUrl = getRuntimeBaseUrl(runtimeConfig);
-      const inference = (await store.getSettings()).inference;
-      const chatModel = inference?.chatModel ?? "";
-      const shouldUseRuntimeChatModel = !chatModel.trim()
-        || chatModel === runtimeConfig.modelId;
-      const nextInference = inference
-        ? {
-            ...inference,
-            baseUrl,
-            ...(shouldUseRuntimeChatModel ? { chatModel: runtimeConfig.modelId } : {}),
-          }
-        : {
-            baseUrl,
-            chatModel: runtimeConfig.modelId,
-          };
-      await store.saveSettings({ inference: nextInference, inferenceRuntime: { ...runtimeConfig, modelPath, ...(mmprojPath ? { mmprojPath } : {}) } });
       return {
         ok: true,
         running: status.running,
@@ -1642,8 +1804,7 @@ function setupIpc() {
       const message = toSafeRuntimeError(error);
       const store = await getStore();
       await appendDiagnostic(store, "inference", "runtime_start_failure", {
-        modelId: (request as Partial<InferenceRuntimeConfig> | undefined)?.modelId ?? "",
-        command: (request as Partial<InferenceRuntimeConfig> | undefined)?.command ?? "",
+        modelId: request?.modelId ?? "",
         error: message,
       });
       return { ok: false, running: false, error: sanitizeUserFacingError(message) };
@@ -1653,6 +1814,7 @@ function setupIpc() {
   handle("inference.runtime.stop", async () => {
     try {
       const status = getRuntimeProcessManager().status();
+      cancelRuntimeProvisioning();
       await getRuntimeProcessManager().stop();
       return { ok: true, running: false, ...status.running ? { pid: status.pid } : {} };
     } catch (error) {
@@ -1666,12 +1828,7 @@ function setupIpc() {
   });
 
   handle("inference.runtime.status", async () => {
-    const store = await getStore();
-    const settings = await store.getSettings();
-    const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
-    if (settings.inferenceRuntime?.runtimeKind !== runtime.runtimeKind || settings.inferenceRuntime?.modelId !== runtime.modelId) {
-      await store.saveSettings({ inferenceRuntime: runtime });
-    }
+    const runtime = await getRuntimeConfigFromRequest();
     const profile = localModelProfiles.find(
       (item) => item.model.url === runtime.modelId || item.model.id === runtime.modelId,
     );
@@ -1683,19 +1840,19 @@ function setupIpc() {
     );
     const runtimeAvailability = await checkRuntimeCommandAvailability(runtime);
     const processStatus = getRuntimeProcessManager().status();
-    return {
+    return toRendererRuntimeStatus({
       running: processStatus.running,
       ...(processStatus.pid === undefined ? {} : { pid: processStatus.pid }),
       baseUrl: getRuntimeBaseUrl(runtime),
       runtimeKind: "managed_llama_server",
       runtimeName: "应用托管 llama-server",
-      modelPath: runtime.modelPath,
       modelId: runtime.modelId,
       modelReady,
       runtimeReady: runtimeAvailability.ready,
+      modelPath: runtime.modelPath,
       ...(runtimeAvailability.command ? { runtimeCommand: runtimeAvailability.command } : {}),
       ...(runtimeAvailability.error ? { runtimeError: runtimeAvailability.error } : {}),
-    };
+    });
   });
 
   handle("inference.local.profiles", async () => {
@@ -1705,13 +1862,21 @@ function setupIpc() {
   handle("inference.config.get", async () => {
     const store = await getStore();
     const config = (await store.getSettings()).inference;
-    return config ? { config } : {};
+    if (!config) {
+      return {};
+    }
+    const { apiKey, ...safeConfig } = config;
+    return { config: { ...safeConfig, hasApiKey: Boolean(apiKey) } };
   });
 
   handle("inference.config.save", async (request) => {
     const store = await getStore();
     const previous = (await store.getSettings()).inference;
-    await store.saveSettings({ inference: request });
+    const next = {
+      ...request,
+      ...(request.apiKey ? { apiKey: request.apiKey } : previous?.apiKey ? { apiKey: previous.apiKey } : {}),
+    };
+    await store.saveSettings({ inference: next });
     dependencyGovernor.reset("llm");
     if (request.apiKey && request.apiKey !== previous?.apiKey) {
       await appendDiagnostic(store, "inference", "api_key_rotated", {
@@ -1740,20 +1905,29 @@ function setupIpc() {
     return { ok: true };
   });
 
-  handle("inference.health", async () => {
+  handle("inference.health", async (request) => {
     try {
-      dependencyGovernor.reset("llm");
-      const client = await createInferenceClient();
-      await client.healthCheck();
-      dependencyGovernor.reset("llm");
-      void processInboundQueue();
+      if (request?.thorough) {
+        dependencyGovernor.reset("llm");
+      }
+      const client = await createInferenceHealthClient();
+      if (request?.thorough) {
+        await client.healthCheck();
+      } else {
+        await client.quickCheck();
+      }
+      if (request?.thorough) {
+        dependencyGovernor.reset("llm");
+        void processInboundQueue();
+      }
       return { ok: true };
     } catch (error) {
-      const store = await getStore();
       const message = error instanceof Error ? error.message : String(error);
-      await appendDiagnostic(store, "inference", "unhealthy_endpoint", {
-        error: message,
-      });
+      if (request?.thorough) {
+        await appendDiagnostic(await getStore(), "inference", "unhealthy_endpoint", {
+          error: sanitizeUserFacingError(message),
+        });
+      }
       return { ok: false, error: sanitizeUserFacingError(message) };
     }
   });
@@ -1761,7 +1935,7 @@ function setupIpc() {
   handle("settings.get", async () => {
     const store = await getStore();
     const settings = await store.getSettings();
-    const runtime = normalizeLocalRuntimeConfig(settings.inferenceRuntime);
+    const runtime = await getRuntimeConfigFromRequest();
     const modelProvider = resolveModelProvider(settings);
     const defaultChatProfile = localModelProfiles.find((profile) => profile.defaultFor === "chat");
     const shouldNormalizeChatModel = Boolean(
@@ -1780,22 +1954,22 @@ function setupIpc() {
       || shouldNormalizeChatModel
     ) {
       return {
-        settings: await store.saveSettings({
+        settings: toRendererSettings(await store.saveSettings({
           modelProvider,
           inferenceRuntime: runtime,
           ...(shouldNormalizeChatModel && settings.inference && defaultChatProfile
             ? { inference: { ...settings.inference, chatModel: defaultChatProfile.model.id } }
             : {}),
-        }),
+        })),
       };
     }
-    return { settings };
+    return { settings: toRendererSettings(settings) };
   });
 
   handle("settings.save", async (request) => {
     const store = await getStore();
-    const settings = await store.saveSettings(request);
-    return { ok: true, settings };
+    const settings = await store.saveSettings(sanitizeRendererSettingsUpdate(request));
+    return { ok: true, settings: toRendererSettings(settings) };
   });
 
   handle("queue.list", async (request) => {
@@ -1806,14 +1980,14 @@ function setupIpc() {
   handle("queue.pause", async () => {
     const store = await getStore();
     const settings = await store.setInboundQueuePaused(true);
-    return { ok: true, settings };
+    return { ok: true, settings: toRendererSettings(settings) };
   });
 
   handle("queue.resume", async () => {
     const store = await getStore();
     const settings = await store.setInboundQueuePaused(false);
     void processInboundQueue();
-    return { ok: true, settings };
+    return { ok: true, settings: toRendererSettings(settings) };
   });
 
   handle("queue.retryDeadLetters", async (request) => {
@@ -1903,12 +2077,33 @@ async function collectJsonFiles(dir: string): Promise<string[]> {
   return files;
 }
 
+/** Stores and broadcasts product-sync progress with provider errors sanitized for UI display. */
 function updateProductSyncProgress(progress: ProductSyncProgress): void {
-  const snapshot = { ...progress, failures: [...progress.failures] };
+  const snapshot = sanitizeProductSyncProgress(progress);
   productSyncRuns.set(progress.runId, snapshot);
+  if (["completed", "cancelled", "failed"].includes(snapshot.phase)) {
+    productSyncControllers.delete(snapshot.runId);
+    const terminalRunIds = [...productSyncRuns.values()]
+      .filter((run) => ["completed", "cancelled", "failed"].includes(run.phase))
+      .map((run) => run.runId);
+    for (const runId of terminalRunIds.slice(0, -MAX_PRODUCT_SYNC_HISTORY)) {
+      productSyncRuns.delete(runId);
+    }
+  }
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send("product.sync.progress", snapshot);
   }
+}
+
+/** Redacts every product-sync failure while preserving progress counters and retry metadata. */
+function sanitizeProductSyncProgress(progress: ProductSyncProgress): ProductSyncProgress {
+  return {
+    ...progress,
+    failures: progress.failures.map((failure) => ({
+      ...failure,
+      error: sanitizeUserFacingError(failure.error),
+    })),
+  };
 }
 
 function optionalNumber<TKey extends string>(key: TKey, value: number | undefined): { [K in TKey]?: number } {
@@ -1919,10 +2114,7 @@ function optionalString<TKey extends string>(key: TKey, value: string | undefine
   return value === undefined ? {} : { [key]: value } as { [K in TKey]?: string };
 }
 
-function safePathSegment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
+/** Creates the isolated application window and installs its navigation security policy. */
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -1932,31 +2124,131 @@ async function createWindow() {
     show: false,
     title: "拼多多 AI 客服助手",
     icon: windowIconPath,
-    // macOS: let the sidebar run edge-to-edge under inset traffic lights.
-    titleBarStyle: "hiddenInset",
+    // Keep native Windows controls, but reserve inset chrome only for macOS.
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : { autoHideMenuBar: true }),
     webPreferences: {
       preload: path.join(dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (process.platform === "win32") {
+    mainWindow.removeMenu();
+  }
   mainWindow.on("closed", () => {
     mainWindow = undefined;
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  const devServerUrl = resolveDevServerUrl(app.isPackaged, process.env.VITE_DEV_SERVER_URL);
+  applyWindowSecurity(mainWindow.webContents, devServerUrl, rendererEntryUrl.href);
   if (devServerUrl) {
     await mainWindow.loadURL(devServerUrl);
   } else {
-    await mainWindow.loadFile(path.join(dirname, "../renderer/index.html"));
+    await mainWindow.loadFile(fileURLToPath(rendererEntryUrl));
   }
   mainWindow.show();
   mainWindow.focus();
 }
 
+/** Emits the packaged-smoke ready signal and requests a clean exit without starting business workers. */
+async function completePackagedSmokeIfRequested(): Promise<boolean> {
+  const readyFile = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_READY_FILE
+    ?? process.argv.find((argument) => argument.startsWith(packagedSmokeReadyPrefix))?.slice(packagedSmokeReadyPrefix.length);
+  if (!readyFile) {
+    return false;
+  }
+  await getStore();
+  await writeFile(readyFile, JSON.stringify({ ready: true, version: app.getVersion() }), "utf8");
+  setImmediate(() => app.quit());
+  return true;
+}
+
+/** Waits for teardown work without allowing a stuck child/browser/network task to block exit forever. */
+async function settleForShutdown(operation: Promise<unknown> | undefined, label: string, timeoutMs: number): Promise<void> {
+  if (!operation) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      console.warn(`Shutdown timed out waiting for ${label}.`);
+      finish();
+    }, timeoutMs);
+    operation.then(finish, (error) => {
+      console.error(`Shutdown operation failed for ${label}.`, sanitizeUserFacingError(error instanceof Error ? error.message : String(error)));
+      finish();
+    });
+  });
+}
+
+/** Stops background work and flushes owned resources before Electron exits. */
+async function shutdownApplicationResources(): Promise<void> {
+  isShuttingDown = true;
+  cancelRuntimeProvisioning();
+  if (inboundQueueWakeup) {
+    clearTimeout(inboundQueueWakeup);
+    inboundQueueWakeup = undefined;
+  }
+  for (const controller of productSyncControllers.values()) {
+    controller.abort();
+  }
+  const browserContexts = [...pddBrowserContexts];
+  const backgroundTasks = [
+    inboundQueueTask,
+    ...productSyncTasks.values(),
+    ...activeIpcTasks,
+  ];
+  await Promise.all([
+    settleForShutdown(pddService?.dispose(), "PDD service", 8_000),
+    settleForShutdown(runtimeProcessManager?.stop(), "local runtime", 8_000),
+    ...browserContexts.map((context, index) => settleForShutdown(context.close(), `PDD browser context ${index + 1}`, 8_000)),
+    ...backgroundTasks.map((task, index) => settleForShutdown(task, `background task ${index + 1}`, 15_000)),
+  ]);
+  productSyncControllers.clear();
+  productSyncTasks.clear();
+  productSyncAccountRuns.clear();
+  pddBrowserContexts.clear();
+  documentHandles.clear();
+  if (storePromise) {
+    await (await storePromise).close();
+  }
+}
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) {
+    return;
+  }
   try {
     configureBundledPlaywright();
+    await pruneRetiredModelCache();
+    if (await completePackagedSmokeIfRequested()) {
+      return;
+    }
     await createWindow();
     setupIpc();
     setupAppUpdater();
@@ -1976,18 +2268,27 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("before-quit", () => {
-  void getRuntimeProcessManager().stop();
+app.on("before-quit", (event) => {
+  if (shutdownComplete) {
+    return;
+  }
+  event.preventDefault();
+  shutdownPromise ??= shutdownApplicationResources()
+    .catch((error) => {
+      console.error("Customer Agent shutdown failed", error);
+    })
+    .finally(() => {
+      shutdownComplete = true;
+    });
+  void shutdownPromise.then(() => app.quit());
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on("activate", () => {
-  if (!mainWindow && BrowserWindow.getAllWindows().length === 0) {
+  if (!isShuttingDown && !mainWindow && BrowserWindow.getAllWindows().length === 0) {
     void createWindow();
   }
 });

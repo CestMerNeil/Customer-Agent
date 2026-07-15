@@ -3,26 +3,40 @@ name: Build Desktop
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "GitHub Release tag to publish when release=true"
+      release_tag:
+        description: Existing release tag to publish
         required: false
-      release:
-        description: "Publish artifacts to GitHub Releases after gates pass"
+        type: string
+      artifact_run_id:
+        description: Successful workflow run containing release artifacts
         required: false
-        default: "false"
+        type: string
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: build-desktop-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  dependency-audit:
+    name: Dependency audit
+    if: inputs.artifact_run_id == ''
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    with:
+      scan-args: |-
+        --lockfile=pnpm-lock.yaml
+      upload-sarif: false
+      fail-on-vuln: true
+
   package:
+    needs: dependency-audit
     name: Package ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -58,6 +72,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Electron target
+        run: node -e "const version = require('./apps/desktop/node_modules/electron/package.json').version; if (!version.startsWith('43.')) throw new Error('Expected Electron 43.x, received ' + version); console.log('Electron ' + version);"
+
       - name: Lint
         run: pnpm lint
 
@@ -74,13 +91,10 @@ jobs:
         run: pnpm local-model:validate
 
       - name: Acceptance release gate
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          tag="${{ github.event.inputs.tag }}"
-          if [[ -z "$tag" ]]; then
-            tag="${{ github.ref_name }}"
-          fi
-          pnpm release:gate -- --platform "${{ matrix.platform }}" --tag "$tag" --release-commit "${{ github.sha }}" --allow-ancestor-commit
+          pnpm release:gate -- --platform "${{ matrix.platform }}" --tag "${{ github.ref_name }}" --release-commit "${{ github.sha }}"
 
       - name: Package desktop app
         run: ${{ matrix.package-command }}
@@ -89,18 +103,26 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ runner.os }}" == "macOS" ]]; then
-            resources_path="$(find apps/desktop/release -path "*.app/Contents/Resources" -type d | head -n 1)"
+            app_path="$(find apps/desktop/release -name "*.app" -type d | head -n 1)"
+            resources_path="$app_path/Contents/Resources"
+            executable_path="$(find "$app_path/Contents/MacOS" -type f | head -n 1)"
           else
             resources_path="$(find apps/desktop/release -path "*/resources" -type d | head -n 1)"
+            unpacked_path="$(find apps/desktop/release -name "win-unpacked" -type d | head -n 1)"
+            executable_path="$(find "$unpacked_path" -maxdepth 1 -name "*.exe" -type f ! -iname "elevate.exe" | head -n 1)"
           fi
-          if [[ -z "$resources_path" ]]; then
-            echo "Unable to locate packaged resources path" >&2
+          if [[ -z "$resources_path" || -z "$executable_path" ]]; then
+            echo "Unable to locate packaged runtime paths" >&2
             exit 1
           fi
-          APP_PACKAGED=true RESOURCES_PATH="$resources_path" pnpm --filter @customer-agent/desktop smoke:runtime:packaged
+          APP_PACKAGED=true RESOURCES_PATH="$resources_path" APP_EXECUTABLE="$executable_path" pnpm --filter @customer-agent/desktop smoke:runtime:packaged
 
       - name: Generate checksums
         run: pnpm --filter @customer-agent/desktop exec node scripts/generate-checksums.mjs --platform "${{ matrix.platform }}"
+
+      - name: Generate release metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: pnpm release:metadata -- --platform "${{ matrix.platform }}" --tag "${{ github.ref_name }}" --release-commit "${{ github.sha }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -113,6 +135,7 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
             apps/desktop/release/checksums-*.txt
+            apps/desktop/release/release-metadata-*.json
           if-no-files-found: error
           retention-days: 14
 
@@ -120,33 +143,130 @@ jobs:
     name: Publish GitHub Release
     needs: package
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
 
     steps:
+      - name: Checkout tagged release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify publish target is immutable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          tag_commit="$(git rev-parse "${tag}^{commit}")"
+          if [[ "$tag_commit" != "${{ github.sha }}" ]]; then
+            echo "Release tag $tag does not resolve to the workflow commit" >&2
+            exit 1
+          fi
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          pnpm --filter @customer-agent/core build
+          node scripts/release-publish-target.mjs \
+            --tag "$tag" \
+            --tag-commit "$tag_commit" \
+            --workflow-commit "${{ github.sha }}" \
+            --existing-release-status "$status"
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist-artifacts
           merge-multiple: true
 
-      - name: Resolve release tag
-        id: release
+      - name: Publish artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist-artifacts/**
+          prerelease: false
+          body: |
+            This release is unsigned. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
+          fail_on_unmatched_files: true
+
+  publish-recovery:
+    name: Publish Existing Artifacts
+    runs-on: ubuntu-latest
+    if: inputs.release_tag != '' && inputs.artifact_run_id != ''
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Checkout tagged release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ inputs.release_tag }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify publish target is immutable
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          tag="${{ github.event.inputs.tag }}"
-          if [[ -z "$tag" ]]; then
-            tag="${{ github.ref_name }}"
-          fi
-          if [[ -z "$tag" ]]; then
-            echo "Release tag is required" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          tag="${{ inputs.release_tag }}"
+          tag_commit="$(git rev-parse "${tag}^{commit}")"
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          pnpm --filter @customer-agent/core build
+          node scripts/release-publish-target.mjs \
+            --tag "$tag" \
+            --tag-commit "$tag_commit" \
+            --workflow-commit "$tag_commit" \
+            --existing-release-status "$status"
+
+      - name: Download existing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: dist-artifacts
+          pattern: customer-agent-*
+          merge-multiple: true
 
       - name: Publish artifacts
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
+          tag_name: ${{ inputs.release_tag }}
           files: dist-artifacts/**
-          generate_release_notes: true
+          prerelease: false
+          body: |
+            This release is unsigned. macOS updates are manual and users may see Gatekeeper or SmartScreen warnings. Verify the published checksums before installation.
           fail_on_unmatched_files: true

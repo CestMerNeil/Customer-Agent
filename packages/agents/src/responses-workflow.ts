@@ -60,10 +60,14 @@ export class ResponsesAgentWorkflow {
     const maxIterations = this.options.maxIterations ?? 4;
     let previousResponseId: string | undefined;
     let nextInput: string | ResponseToolOutput[] = buildInitialInput(input.context);
+    const customerServiceCatalog = await this.executePrefetchTool("list_customer_service_knowledge", { page: 1 });
+    if (customerServiceCatalog) {
+      nextInput = appendPrefetchedCustomerServiceCatalog(nextInput, customerServiceCatalog);
+    }
     if (shouldPrefetchShopProducts(input.context.content)) {
       const result = await this.executePrefetchTool("get_shop_products", {});
       if (result) {
-        if (result.citations?.length) {
+        if (result.ok && result.citations?.length) {
           citations.push(...result.citations);
         }
         nextInput = appendPrefetchedShopProducts(nextInput, result);
@@ -84,7 +88,11 @@ export class ResponsesAgentWorkflow {
       }
       if (!modelResult.toolCalls.length) {
         const text = modelResult.outputText?.trim() || "您好，当前信息不足，建议转人工继续处理。";
-        this.options.onEvent?.({ type: "final", content: text });
+        this.options.onEvent?.({
+          type: "final",
+          content: text,
+          result: { ok: true, content: text, citations: dedupeCitations(citations) },
+        });
         return buildReply(text, input.mode, citations);
       }
 
@@ -94,7 +102,7 @@ export class ResponsesAgentWorkflow {
         this.options.onEvent?.({ type: "tool_call", name: workflowCall.name, input: workflowCall.input });
         const result = await this.executeToolWithRetry(workflowCall);
         this.options.onEvent?.({ type: "tool_result", name: workflowCall.name, result });
-        if (result.citations?.length) {
+        if (result.ok && result.citations?.length) {
           citations.push(...result.citations);
         }
         toolOutputs.push({
@@ -115,11 +123,15 @@ export class ResponsesAgentWorkflow {
     const finalResult = await this.options.invokeModel({
       instructions: `${instructions}\n\n工具循环已达到上限。请只基于已经返回的工具结果给出最终客服回复；信息不足时建议转人工。`,
       input: Array.isArray(nextInput) ? nextInput : "请给出最终客服回复。",
-      tools,
+      tools: [],
       ...(previousResponseId ? { previousResponseId } : {}),
     });
     const text = finalResult.outputText?.trim() || "您好，当前信息不足，建议转人工继续处理。";
-    this.options.onEvent?.({ type: "final", content: text });
+    this.options.onEvent?.({
+      type: "final",
+      content: text,
+      result: { ok: true, content: text, citations: dedupeCitations(citations) },
+    });
     return buildReply(text, input.mode, citations);
   }
 
@@ -172,7 +184,8 @@ function isCustomerAgentToolName(value: string): value is CustomerAgentToolName 
   return value === "get_shop_products"
     || value === "send_goods_link"
     || value === "get_product_knowledge"
-    || value === "search_customer_service_knowledge"
+    || value === "list_customer_service_knowledge"
+    || value === "get_customer_service_knowledge"
     || value === "transfer_conversation";
 }
 
@@ -180,6 +193,7 @@ function buildResponsesInstructions(context: CustomerServiceContext, tools: Cust
   return [
     "你是拼多多商家客服 Agent。请用自然、简短、礼貌的中文客服口吻处理买家消息。",
     "商品事实、库存、价格、适配、订单、物流、售后政策必须先调用工具核验；工具没有结果时，不要编造。",
+    "客服知识第 1 页目录已预置在首条输入中；相关时直接调用 get_customer_service_knowledge 获取全文，仅需后续页时再调用 list_customer_service_knowledge。不得只根据目录标题回答。",
     "寒暄、低信息追问或买家不满时，可以直接给出正常客服回应，并引导买家补充商品、订单或售后问题。",
     "不要输出调试说明，不要解释你的推理过程，不要暴露工具名或内部 JSON。",
     `店铺ID：${context.shopId}`,
@@ -216,6 +230,17 @@ function appendPrefetchedShopProducts(input: string, result: CustomerAgentToolRe
   ].join("\n");
 }
 
+function appendPrefetchedCustomerServiceCatalog(input: string, result: CustomerAgentToolResult): string {
+  return [
+    input,
+    "",
+    "当前店铺客服知识目录：",
+    result.ok ? result.content : `获取失败：${result.error ?? result.content}`,
+    "",
+    "如果目录中存在相关知识，必须调用 get_customer_service_knowledge 读取正文后再回答；不得只根据标题或模型自身知识回答店铺事实。",
+  ].join("\n");
+}
+
 function toResponseToolDefinition(tool: CustomerAgentTool): ResponseToolDefinition {
   return {
     type: "function",
@@ -238,11 +263,23 @@ function toolParameters(name: CustomerAgentToolName): Record<string, unknown> {
       },
     };
   }
-  if (name === "search_customer_service_knowledge") {
+  if (name === "list_customer_service_knowledge") {
     return {
-      query: {
-        type: "string",
-        description: "要检索的售前、售后、物流或客服政策问题。",
+      page: {
+        type: "integer",
+        minimum: 1,
+        description: "知识目录页码，从 1 开始；默认第 1 页。",
+      },
+    };
+  }
+  if (name === "get_customer_service_knowledge") {
+    return {
+      citation_ids: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: 10,
+        description: "从客服知识目录中选择的精确 citation ID 列表。",
       },
     };
   }

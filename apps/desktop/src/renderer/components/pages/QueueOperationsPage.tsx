@@ -80,7 +80,7 @@ export const QueueOperationsPage: React.FC = () => {
                   borderRadius: "9px",
                   fontSize: 12,
                   fontWeight: 600,
-                  color: "#525252",
+                  color: tokens.color.text.secondary,
                   minWidth: 110,
                 }}
               >
@@ -94,7 +94,7 @@ export const QueueOperationsPage: React.FC = () => {
               <Button
                 variant="outlined"
                 onClick={pauseQueue}
-                sx={{ ...smallButton, bgcolor: paused ? "#f0f0f0" : "transparent" }}
+                sx={{ ...smallButton, bgcolor: paused ? tokens.color.control.fill : "transparent" }}
                 startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>pause</span>}
               >
                 暂停
@@ -102,7 +102,7 @@ export const QueueOperationsPage: React.FC = () => {
               <Button
                 variant="outlined"
                 onClick={resumeQueue}
-                sx={{ ...smallButton, bgcolor: paused ? "transparent" : "#f0f0f0" }}
+                sx={{ ...smallButton, bgcolor: paused ? "transparent" : tokens.color.control.fill }}
                 startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>play_arrow</span>}
               >
                 恢复
@@ -113,10 +113,10 @@ export const QueueOperationsPage: React.FC = () => {
                 disabled={(metric?.deadLetter ?? 0) === 0}
                 sx={{
                   ...smallButton,
-                  borderColor: "#f0d9a8",
-                  bgcolor: "#fffbf2",
+                  borderColor: tokens.color.state.warning,
+                  bgcolor: tokens.color.state.warningSoft,
                   color: tokens.color.state.warning,
-                  "&:hover": { borderColor: "#f0d9a8", bgcolor: "#fdf3dd" },
+                  "&:hover": { borderColor: tokens.color.state.warning, bgcolor: tokens.color.state.warningSoft },
                 }}
                 startIcon={<span className="material-symbols-rounded" aria-hidden="true" style={{ fontSize: 16 }}>replay</span>}
               >
@@ -172,7 +172,7 @@ export const QueueOperationsPage: React.FC = () => {
             sx={{
               fontSize: 11,
               fontWeight: 500,
-              color: "#525252",
+              color: tokens.color.text.secondary,
               border: `1px solid ${tokens.color.border.hairline}`,
               borderRadius: "999px",
               p: "5px 11px",
@@ -203,7 +203,7 @@ export const QueueOperationsPage: React.FC = () => {
               fontWeight: 700,
               letterSpacing: ".1em",
               color: tokens.color.text.tertiary,
-              borderBottom: "1px solid #f0f0f0",
+              borderBottom: `1px solid ${tokens.color.border.hairline}`,
             }}
           >
             <Box sx={{ width: 64 }}>入队</Box>
@@ -246,7 +246,7 @@ function DependencyRow({ item }: { item: DependencySnapshot }) {
     item.circuitState === "closed"
       ? { color: tokens.color.state.success, dot: tokens.color.state.success, label: "正常" }
       : item.circuitState === "half_open"
-        ? { color: tokens.color.state.warning, dot: "#f59e0b", label: "恢复中" }
+        ? { color: tokens.color.state.warning, dot: tokens.color.state.warning, label: "恢复中" }
         : { color: tokens.color.state.error, dot: tokens.color.state.error, label: "熔断" };
   return (
     <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -279,10 +279,10 @@ function QueueRow({ item, last }: { item: InboundQueueRecord; last: boolean }) {
         display: "flex",
         alignItems: "center",
         p: "12px 2px",
-        borderBottom: last ? "none" : "1px solid #f0f0f0",
+        borderBottom: last ? "none" : `1px solid ${tokens.color.border.hairline}`,
       }}
     >
-      <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2" }}>
+      <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>
         {new Date(item.enqueuedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
       </Typography>
       <Typography noWrap sx={{ width: 96, fontSize: 12, fontWeight: 600, pr: 1 }}>
@@ -295,7 +295,7 @@ function QueueRow({ item, last }: { item: InboundQueueRecord; last: boolean }) {
         <Pill label={pill.label} tone={pill.tone} />
       </Box>
       <Typography
-        sx={{ width: 44, textAlign: "right", fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#525252" }}
+        sx={{ width: 44, textAlign: "right", fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}
       >
         {item.attempts}
       </Typography>

@@ -11,7 +11,7 @@ const config = {
   base: "./",
   build: {
     outDir: "dist/renderer",
-    emptyOutDir: false,
+    emptyOutDir: true,
   },
   test: {
     environment: "jsdom",

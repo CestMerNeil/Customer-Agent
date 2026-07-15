@@ -31,20 +31,13 @@ beforeEach(() => {
       }
       if (channel === "queue.list") return { items: [] };
       if (channel === "dependency.health") return { dependencies: [] };
-      if (channel === "acceptance.status") {
-        return {
-          ok: false,
-          commitSha: "test-commit",
-          platform: "darwin-arm64",
-          records: 0,
-          errors: ["pdd-real-merchant-operations is missing passing evidence"],
-          matrix: [],
-        };
-      }
+      if (channel === "settings.get") return { settings: {} };
+      if (channel === "app.update.status") return { state: "idle", version: "1.0.5", enabled: true };
       if (channel === "log.list") return { logs: [] };
       if (channel === "inference.health") return { ok: false, error: "未配置" };
       return { ok: true };
     }),
+    on: vi.fn(() => () => undefined),
   } as unknown as CustomerAgentBridge;
 });
 
@@ -65,7 +58,7 @@ describe("App", () => {
     expect(screen.getByRole("option", { name: "账号" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "知识库" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "模型" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "发布" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "发布" })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "设置" })).toBeInTheDocument();
   });
 
@@ -98,14 +91,13 @@ describe("App", () => {
     expect((await screen.findAllByText("1")).length).toBeGreaterThan(0);
   });
 
-  it("opens the release status page with acceptance gate state", async () => {
+  it("shows the real app version under system version settings", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("option", { name: "发布" }));
+    fireEvent.click(screen.getByRole("option", { name: "设置" }));
 
-    expect(screen.getByRole("heading", { name: "发布" })).toBeInTheDocument();
-    expect(await screen.findByText("门禁未通过")).toBeInTheDocument();
-    expect(await screen.findByText(/commit test-co/)).toBeInTheDocument();
+    expect(screen.getByText("系统版本")).toBeInTheDocument();
+    expect(await screen.findByText("v1.0.5")).toBeInTheDocument();
   });
 
   it("updates the top inference status when model health changes", async () => {
@@ -128,12 +120,18 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Responses API 不可用")).toBeInTheDocument();
+    expect(await screen.findByText("云端 AI 未连接")).toBeInTheDocument();
 
     window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
       detail: { ok: true },
     }));
 
-    expect(await screen.findByText("Responses API 可用")).toBeInTheDocument();
+    expect(await screen.findByText("云端 AI 已连接")).toBeInTheDocument();
+
+    window.dispatchEvent(new CustomEvent("customer-agent:inference-health-changed", {
+      detail: { modelProvider: "local", ok: null },
+    }));
+
+    expect(await screen.findByText("正在检查本地 AI…")).toBeInTheDocument();
   });
 });

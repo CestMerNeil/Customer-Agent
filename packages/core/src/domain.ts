@@ -42,6 +42,9 @@ export interface AccountRecord {
   updatedAt: string;
 }
 
+/** Account fields safe to expose across the Electron renderer boundary. */
+export type RendererAccountRecord = Omit<AccountRecord, "cookies">;
+
 export interface MessageRecord extends CustomerServiceContext {
   state: MessageState;
   replyText?: string;
@@ -105,7 +108,8 @@ export interface ConversationMemoryRecord {
   updatedAt: string;
 }
 
-export type AgentAuditEventType = "model" | "tool_call" | "tool_result" | "final" | "loop_limit";
+/** Identifies an auditable stage of a real Agent run or PDD delivery. */
+export type AgentAuditEventType = "model" | "tool_call" | "tool_result" | "final" | "loop_limit" | "pdd_send_success";
 
 export interface AgentAuditRecord {
   id: string;
@@ -153,7 +157,19 @@ export interface InferenceConfig {
   chatModel: string;
   temperature?: number;
   maxTokens?: number;
+  enableThinking?: boolean;
 }
+
+/** Inference settings safe to expose without returning the persisted API key. */
+export type RendererInferenceConfig = Omit<InferenceConfig, "apiKey"> & {
+  hasApiKey: boolean;
+};
+
+/** Managed-runtime identity safe to expose without filesystem or command fields. */
+export type RendererInferenceRuntimeConfig = Pick<
+  InferenceRuntimeConfig,
+  "runtimeKind" | "modelId" | "mmprojModelId" | "host" | "port"
+>;
 
 // A ModelProvider is the supplier of models behind the unified OpenAI/Responses-compatible
 // interface (chat/vision/embedding). It is one of two kinds:
@@ -204,6 +220,12 @@ export interface AppSettings {
   inference?: InferenceConfig;
   inferenceRuntime?: InferenceRuntimeConfig;
 }
+
+/** Application settings safe to return to the unprivileged renderer. */
+export type RendererAppSettings = Omit<AppSettings, "inference" | "inferenceRuntime"> & {
+  inference?: RendererInferenceConfig;
+  inferenceRuntime?: RendererInferenceRuntimeConfig;
+};
 
 export interface GovernedKnowledgeRecord {
   id: string;

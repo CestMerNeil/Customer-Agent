@@ -58,14 +58,14 @@ export const HumanHandoffPage: React.FC = () => {
   const fieldHelp = { fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary, mt: "6px" } as const;
   const fieldBox = {
     width: "100%",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${tokens.color.border.strong}`,
     borderRadius: "10px",
     p: "11px 13px",
     fontFamily: tokens.font.display,
     fontSize: 12,
     fontWeight: 500,
     lineHeight: 1.7,
-    color: "#525252",
+    color: tokens.color.text.secondary,
     minHeight: 66,
     alignItems: "flex-start",
   } as const;
@@ -112,7 +112,7 @@ export const HumanHandoffPage: React.FC = () => {
               fontWeight: 700,
               letterSpacing: ".1em",
               color: tokens.color.text.tertiary,
-              borderBottom: "1px solid #f0f0f0",
+              borderBottom: `1px solid ${tokens.color.border.hairline}`,
             }}
           >
             <Box sx={{ width: 56 }}>时间</Box>
@@ -130,17 +130,17 @@ export const HumanHandoffPage: React.FC = () => {
                   display: "flex",
                   alignItems: "center",
                   p: "14px 2px",
-                  borderBottom: index === escalatedDrafts.length - 1 ? "none" : "1px solid #f0f0f0",
+                  borderBottom: index === escalatedDrafts.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
                 }}
               >
-                <Typography sx={{ width: 56, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2" }}>
+                <Typography sx={{ width: 56, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>
                   {new Date(draft.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                 </Typography>
                 <Typography noWrap sx={{ width: 96, fontSize: 12, fontWeight: 600, pr: 1 }}>
                   {message?.buyerNickname ?? message?.buyerId ?? draft.messageId}
                 </Typography>
                 <Box sx={{ width: 110 }}>
-                  <Pill label={handoffReason(message)} tone="warning" />
+                  <Pill label={handoffReason(message).label} tone={handoffReason(message).tone} />
                 </Box>
                 <InputBase
                   value={notes[draft.id] ?? draft.operatorNote ?? ""}
@@ -234,9 +234,10 @@ export const HumanHandoffPage: React.FC = () => {
   );
 };
 
-function handoffReason(message: MessageRecord | undefined): string {
-  if (!message) return "人工处理";
-  if (message.error) return "需要人工确认";
-  if (message.state === "escalated") return "AI 已停止";
-  return "等待人工";
+/** Reason pill per design: 等待人工=warning, AI 已停止=outline, 需要人工确认=error. */
+function handoffReason(message: MessageRecord | undefined): { label: string; tone: "warning" | "outline" | "error" } {
+  if (!message) return { label: "人工处理", tone: "warning" };
+  if (message.error) return { label: "需要人工确认", tone: "error" };
+  if (message.state === "escalated") return { label: "AI 已停止", tone: "outline" };
+  return { label: "等待人工", tone: "warning" };
 }

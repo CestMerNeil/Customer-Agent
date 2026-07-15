@@ -2,6 +2,9 @@ import React from "react";
 import { Box } from "@mui/material";
 import { NavigationRail, NavItem } from "./NavigationRail";
 import { TopAppBar } from "./TopAppBar";
+import { tokens } from "../../theme";
+
+const IS_MACOS = navigator.userAgent.includes("Macintosh");
 
 interface RootLayoutProps {
   children: React.ReactNode;
@@ -37,6 +40,7 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
       {/* Draggable strip for the macOS hiddenInset traffic lights. */}
       <Box
         sx={{
+          display: IS_MACOS ? "block" : "none",
           height: 40,
           flex: "0 0 auto",
           borderBottom: "1px solid",
@@ -58,9 +62,9 @@ export const RootLayout: React.FC<RootLayoutProps> = ({
               py: 3.25,
               "&::-webkit-scrollbar": { width: 10 },
               "&::-webkit-scrollbar-thumb": {
-                bgcolor: "#e2e2e2",
+                bgcolor: tokens.color.border.strong,
                 borderRadius: 6,
-                border: "3px solid #fff",
+                border: `3px solid ${tokens.color.surface.base}`,
               },
             }}
           >

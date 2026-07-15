@@ -159,7 +159,7 @@ export const AccountManager: React.FC = () => {
             fontWeight: 700,
             letterSpacing: ".1em",
             color: tokens.color.text.tertiary,
-            borderBottom: "1px solid #f0f0f0",
+            borderBottom: `1px solid ${tokens.color.border.hairline}`,
           }}
         >
           <Box sx={{ flex: 1 }}>账号 / 店铺</Box>
@@ -200,7 +200,7 @@ export const AccountManager: React.FC = () => {
             ? tokens.color.state.error
             : reconnecting
               ? tokens.color.state.warning
-              : "#525252";
+              : tokens.color.text.secondary;
           return (
             <Box
               key={account.id}
@@ -208,7 +208,7 @@ export const AccountManager: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 p: "14px 2px",
-                borderBottom: index === accountList.length - 1 ? "none" : "1px solid #f0f0f0",
+                borderBottom: index === accountList.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -231,8 +231,8 @@ export const AccountManager: React.FC = () => {
                       px: "7px",
                       py: "5px",
                       borderRadius: "7px",
-                      color: account.status === status ? "#fff" : tokens.color.text.secondary,
-                      bgcolor: account.status === status ? availabilityColor(status) : "#f4f4f4",
+                      color: account.status === status ? tokens.color.surface.onInverse : tokens.color.text.secondary,
+                      bgcolor: account.status === status ? availabilityColor(status) : tokens.color.control.fill,
                     }}
                   >
                     {availabilityLabel(status)}
@@ -243,7 +243,7 @@ export const AccountManager: React.FC = () => {
                 <Pill label={pill.label} tone={pill.tone} />
               </Box>
               <Typography
-                sx={{ width: 70, textAlign: "center", fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#525252" }}
+                sx={{ width: 70, textAlign: "center", fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}
               >
                 {runtime.reconnectCount}
               </Typography>
@@ -262,7 +262,7 @@ export const AccountManager: React.FC = () => {
                     fontSize: 11,
                     fontWeight: 600,
                     cursor: "pointer",
-                    color: running ? "#525252" : tokens.color.text.primary,
+                    color: running ? tokens.color.text.secondary : tokens.color.text.primary,
                   }}
                 >
                   {running ? "停止" : "启动"}

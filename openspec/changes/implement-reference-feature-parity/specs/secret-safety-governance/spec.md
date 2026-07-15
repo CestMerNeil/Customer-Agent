@@ -35,3 +35,19 @@ The system SHALL allow GitHub Actions to use GitHub Release credentials while pr
 #### Scenario: Signing is deferred
 - **WHEN** the first parity release workflow runs
 - **THEN** it does not require macOS signing, macOS notarization, or Windows signing secrets
+
+### Requirement: Privileged Electron boundary
+The Electron main process SHALL keep decrypted secrets, raw payloads, local filesystem paths, and executable runtime fields out of renderer responses and general settings updates.
+
+#### Scenario: Renderer lists accounts or settings
+- **WHEN** the trusted renderer requests account or application settings
+- **THEN** cookies and API keys are omitted, API-key presence is represented only as a boolean, and runtime command/path fields are omitted
+
+#### Scenario: Renderer starts a local model
+- **WHEN** the renderer requests a local runtime start
+- **THEN** it can submit only an approved model identifier and request identifier
+- **AND** the main process resolves the reviewed command, arguments, model paths, host, and port
+
+#### Scenario: Renderer origin is evaluated
+- **WHEN** an IPC request or navigation originates from a packaged `file:` URL
+- **THEN** only the explicit packaged renderer entry is trusted and arbitrary local files are rejected

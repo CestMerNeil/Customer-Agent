@@ -1,6 +1,6 @@
 {
   "name": "@customer-agent/desktop",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "private": true,
   "description": "Electron desktop assistant for Pinduoduo customer-service operations.",
   "author": "Customer Agent Contributors",
@@ -22,25 +22,24 @@
     "package:mac:ci": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --publish never",
     "package:win": "pnpm run playwright:install && pnpm run preflight:release && pnpm run build && electron-builder --win",
     "package:win:ci": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && electron-builder --win nsis zip --publish never",
-    "package:dir": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
+    "package:dir": "pnpm run playwright:install && pnpm run preflight:release -- --non-production-ci && pnpm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir && node scripts/sign-macos-adhoc.mjs"
   },
   "dependencies": {
     "@customer-agent/agents": "workspace:*",
     "@customer-agent/core": "workspace:*",
     "@customer-agent/db": "workspace:*",
     "@customer-agent/inference": "workspace:*",
-    "@customer-agent/knowledge": "workspace:*",
     "@customer-agent/pdd": "workspace:*",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.0.1",
-    "@vitejs/plugin-react": "^4.3.4",
     "electron-updater": "^6.8.9",
+    "mammoth": "^1.10.0",
     "material-symbols": "^0.44.10",
+    "officeparser": "^7.0.1",
     "playwright": "^1.54.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "vite": "^6.0.7"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.0",
@@ -48,10 +47,12 @@
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
-    "electron": "^34.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^43.1.0",
     "electron-builder": "^26.0.12",
     "jsdom": "^25.0.1",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.6"
   },
   "build": {
     "appId": "com.customeragent.desktop",
@@ -84,6 +85,7 @@
     ],
     "mac": {
       "category": "public.app-category.business",
+      "identity": null,
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"

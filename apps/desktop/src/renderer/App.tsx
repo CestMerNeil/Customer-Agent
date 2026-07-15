@@ -12,7 +12,6 @@ import { ModelSettings } from "./components/pages/ModelSettings";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { AgentAuditViewer } from "./components/pages/AgentAuditViewer";
 import { QueueOperationsPage } from "./components/pages/QueueOperationsPage";
-import { ReleaseStatusPage } from "./components/pages/ReleaseStatusPage";
 import { HumanHandoffPage } from "./components/pages/HumanHandoffPage";
 
 type ViewState = {
@@ -89,6 +88,7 @@ const views: readonly ViewState[] = [
     icon: "menu_book",
     section: "配置",
     caption: "全局与店铺知识的导入、同步与检索治理",
+    ownHeader: true,
     render: () => <KnowledgeBaseManager />,
   },
   {
@@ -98,16 +98,8 @@ const views: readonly ViewState[] = [
     icon: "smart_toy",
     section: "配置",
     caption: "选择由「本地 AI」还是「云端 AI」来生成客服回复",
+    ownHeader: true,
     render: () => <ModelSettings />,
-  },
-  {
-    id: "release",
-    label: "发布",
-    title: "发布",
-    icon: "verified",
-    section: "系统",
-    caption: "验收证据与 GitHub Release 门禁",
-    render: () => <ReleaseStatusPage />,
   },
   {
     id: "settings",
@@ -115,7 +107,7 @@ const views: readonly ViewState[] = [
     title: "设置",
     icon: "settings",
     section: "系统",
-    caption: "回复策略与本地数据",
+    caption: "回复策略、本地数据与版本更新",
     render: () => <SettingsPage />,
   },
 ];
@@ -129,11 +121,11 @@ type InferenceTopStatus = {
 
 type InferenceHealthEvent = CustomEvent<{
   modelProvider?: ModelProvider;
-  ok: boolean;
+  ok: boolean | null;
   error?: string;
 }>;
 
-const providerLabel = (provider: ModelProvider) => provider === "remote" ? "Responses API" : "本地模型";
+const providerLabel = (provider: ModelProvider) => provider === "remote" ? "云端 AI" : "本地 AI";
 
 export function App() {
   const [activeId, setActiveId] = useState("overview");
@@ -224,12 +216,12 @@ export function App() {
   const topInferenceStatus = useMemo(() => {
     const labelPrefix = providerLabel(inferenceTopStatus.provider);
     if (inferenceTopStatus.ok === null) {
-      return { label: `${labelPrefix} 检查中`, tone: "neutral" as const };
+      return { label: `正在检查${labelPrefix}…`, tone: "neutral" as const };
     }
     if (inferenceTopStatus.ok) {
-      return { label: `${labelPrefix} 可用`, tone: "success" as const };
+      return { label: `${labelPrefix} 已连接`, tone: "success" as const };
     }
-    return { label: `${labelPrefix} 不可用`, tone: "error" as const };
+    return { label: `${labelPrefix} 未连接`, tone: "error" as const };
   }, [inferenceTopStatus]);
 
   return (

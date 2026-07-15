@@ -3,9 +3,9 @@
 Operating contract for the Customer Agent parity work. The project no longer
 uses Mock Pinduoduo, Seam A/B/C, or `verify:flow` as completion evidence.
 
-For general coding behavior (simplicity, surgical changes, goal-driven
-execution) follow **CLAUDE.md**; this file only defines repository-specific
-verification rules.
+Keep changes simple, surgical, and goal-driven. This tracked file is the
+authoritative repository instruction source; ignored local assistant files such
+as `CLAUDE.md` are not repository policy and must not override it.
 
 ## The single verdict
 

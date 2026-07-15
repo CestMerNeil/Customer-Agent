@@ -154,12 +154,12 @@ export const Pill: React.FC<{
   tone?: "outline" | "success" | "warning" | "error" | "dark" | "neutral" | "muted";
 }> = ({ label, tone = "outline" }) => {
   const styles: Record<string, object> = {
-    outline: { color: tokens.color.text.primary, border: `1px solid #e0e0e0`, p: "2px 8px" },
+    outline: { color: tokens.color.text.primary, border: `1px solid ${tokens.color.border.strong}`, p: "2px 8px" },
     success: { color: tokens.color.state.success, bgcolor: tokens.color.state.successSoft, p: "3px 8px" },
     warning: { color: tokens.color.state.warning, bgcolor: tokens.color.state.warningSoft, p: "3px 8px" },
     error: { color: tokens.color.state.error, bgcolor: tokens.color.state.errorSoft, p: "3px 8px" },
-    dark: { color: tokens.color.text.primary, bgcolor: "#0a0a0a12", p: "3px 8px" },
-    neutral: { color: tokens.color.text.secondary, bgcolor: "#7373731a", p: "3px 8px" },
+    dark: { color: tokens.color.text.primary, bgcolor: tokens.color.accent.soft, p: "3px 8px" },
+    neutral: { color: tokens.color.text.secondary, bgcolor: tokens.color.control.fill, p: "3px 8px" },
     muted: { color: tokens.color.text.secondary, border: `1px solid ${tokens.color.border.hairline}`, p: "2px 8px" },
   };
   return (

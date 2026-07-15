@@ -143,6 +143,11 @@ export function validateAcceptanceRecord(record: AcceptanceRecord): AcceptanceVa
   return { ok: errors.length === 0, errors };
 }
 
+/** Validates release coverage using operator-approved records for the exact candidate.
+ *
+ * @param request - Candidate commit, platform, and sanitized acceptance records.
+ * @returns Validation errors for malformed, missing, blocked, or generated-only evidence.
+ */
 export function validateAcceptanceRecordSet(request: ValidateAcceptanceRecordSetRequest): AcceptanceValidationResult {
   const errors = request.records.flatMap((record, index) =>
     validateAcceptanceRecord(record).errors.map((error) => `records[${index}].${error}`),
@@ -153,7 +158,9 @@ export function validateAcceptanceRecordSet(request: ValidateAcceptanceRecordSet
 
   for (const row of releaseCapabilityMatrix) {
     if (row.requiredScopes === "platform") {
-      const hasPlatformPass = matchingRecords.some((record) => record.capability === row.capability && record.outcome === "pass");
+      const hasPlatformPass = matchingRecords.some(
+        (record) => record.capability === row.capability && record.outcome === "pass" && record.actor === "operator",
+      );
       if (!hasPlatformPass) {
         errors.push(`${row.capability} is missing passing platform evidence`);
       }
@@ -166,7 +173,8 @@ export function validateAcceptanceRecordSet(request: ValidateAcceptanceRecordSet
           record.capability === row.capability &&
           record.accountAlias === scope.accountAlias &&
           record.shopAlias === scope.shopAlias &&
-          record.outcome === "pass",
+          record.outcome === "pass" &&
+          record.actor === "operator",
       );
       if (!hasScopedPass) {
         errors.push(`${row.capability} is missing passing evidence for ${scope.accountAlias}/${scope.shopAlias}`);

@@ -7,18 +7,26 @@
     "dev": "pnpm --filter @customer-agent/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @customer-agent/core build && pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "node --test scripts/acceptance-from-audit.test.mjs && pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
     "acceptance:generate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs generate",
     "acceptance:validate": "pnpm --filter @customer-agent/core build && node scripts/acceptance-evidence.mjs validate",
+    "acceptance:from-audit": "pnpm --filter @customer-agent/core build && node scripts/acceptance-from-audit.mjs",
     "security:leak-scan": "pnpm --filter @customer-agent/core build && node scripts/secret-leak-scan.mjs",
     "local-model:validate": "pnpm --filter @customer-agent/core build && node scripts/local-model-manifest.mjs",
     "local-model:probe": "pnpm --filter @customer-agent/inference build && node scripts/local-model-capability-probe.mjs",
     "release:gate": "pnpm --filter @customer-agent/core build && node scripts/release-gate.mjs",
+    "release:metadata": "pnpm --filter @customer-agent/core build && node scripts/release-metadata.mjs",
     "pdd:calibration:template": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs template",
     "pdd:calibration:validate": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs validate",
     "pdd:calibration:summarize": "pnpm --filter @customer-agent/core build && node scripts/pdd-calibration-evidence.mjs summarize"
+  },
+  "overrides": {
+    "form-data": "4.0.6",
+    "js-yaml": "4.3.0",
+    "tar": "7.5.19",
+    "undici": "6.27.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -27,6 +35,6 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

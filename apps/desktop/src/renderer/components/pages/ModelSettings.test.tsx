@@ -1,72 +1,21 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { localModelProfiles } from "@customer-agent/core";
 import { ModelSettings } from "./ModelSettings";
 import type { CustomerAgentBridge } from "../../../preload/index.cts";
 
-const defaultProfile = {
-  id: "local-qwen2_5-vl-3b-instruct-q4_k_m",
-  label: "Qwen2.5-VL 3B 多模态",
-  description: "默认本地多模态客服模型。",
-  defaultFor: "chat" as const,
-  capabilities: ["chat", "vision"] as const,
-  runtime: {
-    runtimeKind: "managed_llama_server" as const,
-    contextSize: 32768,
-    platforms: ["darwin-arm64", "darwin-x64", "win32-x64"] as const,
-  },
-  model: {
-    id: "unsloth/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
-    source: "modelscope" as const,
-    url: "https://modelscope.cn/models/unsloth/Qwen2.5-VL-3B-Instruct-GGUF/resolve/master/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
-    fileName: "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
-    format: "gguf" as const,
-    license: "Apache-2.0",
-    sha256: "c47e8c1f6fb3e8cff6ec58909baff16dbeffb64a5bb3b746b96e05e6334c129f",
-    sizeBytes: 1_929_901_408,
-  },
-  auxiliaryModels: [{
-    purpose: "mmproj" as const,
-    id: "unsloth/Qwen2.5-VL-3B-Instruct-GGUF:mmproj-F16",
-    source: "modelscope" as const,
-    url: "https://modelscope.cn/models/unsloth/Qwen2.5-VL-3B-Instruct-GGUF/resolve/master/mmproj-F16.gguf",
-    fileName: "mmproj-F16.gguf",
-    format: "gguf" as const,
-    license: "Apache-2.0",
-    sha256: "4c1240f514de94c81b70709b0f9a80c7e3297598ea7c83f39dc00b18ee5be60c",
-    sizeBytes: 1_338_428_256,
-  }],
-};
+const defaultProfile = localModelProfiles.find((profile) => profile.defaultFor === "chat")!;
+const qualityProfile = localModelProfiles.at(-1)!;
 
-const qualityProfile = {
-  ...defaultProfile,
-  id: "local-qwen2_5-vl-7b-instruct-q4_k_m",
-  label: "Qwen2.5-VL 7B 多模态",
-  defaultFor: undefined,
-  model: {
-    ...defaultProfile.model,
-    id: "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
-    url: "https://modelscope.cn/models/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/master/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
-    fileName: "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
-    sha256: "d16776dcd9a28d42758c2958ed3a752aabf20a305252cd64ff2be72b4a78c503",
-    sizeBytes: 4_683_072_384,
-  },
-  auxiliaryModels: [{
-    ...defaultProfile.auxiliaryModels[0],
-    id: "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:mmproj-F16",
-    url: "https://modelscope.cn/models/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/master/mmproj-F16.gguf",
-    sha256: "987dd0733033fb5dd9b124d1ca926ae865572e432384eee7618b2eec3e735e17",
-    sizeBytes: 1_354_163_040,
-  }],
-};
-
+/** Installs the deterministic renderer bridge used by local UI-state tests. */
 function mockBridge() {
   const invoke = vi.fn<(channel: string, request?: unknown) => Promise<Record<string, unknown>>>(async (channel: string) => {
     if (channel === "inference.config.get") {
       return {
         config: {
           baseUrl: "http://127.0.0.1:8000/v1",
-          apiKey: "",
+          hasApiKey: false,
           chatModel: defaultProfile.model.id,
         },
       };
@@ -78,7 +27,7 @@ function mockBridge() {
           inferenceRuntime: {
             runtimeKind: "managed_llama_server",
             modelId: defaultProfile.model.url,
-            modelPath: "/models/qwen2_5-vl-3b.gguf",
+            modelPath: "/models/qwen3_5-9b.gguf",
             command: "llama-server",
             host: "127.0.0.1",
             port: 8000,
@@ -87,7 +36,7 @@ function mockBridge() {
       };
     }
     if (channel === "inference.local.profiles") {
-      return { profiles: [defaultProfile, qualityProfile] };
+      return { profiles: [...localModelProfiles] };
     }
     if (channel === "inference.runtime.status") {
       return {
@@ -95,7 +44,7 @@ function mockBridge() {
         baseUrl: "http://127.0.0.1:8000/v1",
         runtimeKind: "managed_llama_server",
         runtimeName: "应用托管 llama-server",
-        modelPath: "/models/qwen2_5-vl-3b.gguf",
+        modelPath: "/models/qwen3_5-9b.gguf",
         modelId: defaultProfile.model.url,
         modelReady: true,
         runtimeReady: true,
@@ -128,8 +77,9 @@ describe("ModelSettings", () => {
         return {
           config: {
             baseUrl: "https://api.openai.com/v1",
-            apiKey: "sk-test",
-            chatModel: "gpt-4.1-mini",
+            hasApiKey: true,
+            chatModel: "qwen3.6-flash",
+            enableThinking: false,
           },
         };
       }
@@ -140,7 +90,7 @@ describe("ModelSettings", () => {
             inferenceRuntime: {
               runtimeKind: "managed_llama_server",
               modelId: defaultProfile.model.url,
-              modelPath: "/models/qwen2_5-vl-3b.gguf",
+              modelPath: "/models/qwen3_5-9b.gguf",
               command: "llama-server",
               host: "127.0.0.1",
               port: 8000,
@@ -149,7 +99,7 @@ describe("ModelSettings", () => {
         };
       }
       if (channel === "inference.local.profiles") {
-        return { profiles: [defaultProfile, qualityProfile] };
+        return { profiles: [...localModelProfiles] };
       }
       if (channel === "inference.runtime.status") {
         return {
@@ -157,7 +107,7 @@ describe("ModelSettings", () => {
           baseUrl: "http://127.0.0.1:8000/v1",
           runtimeKind: "managed_llama_server",
           runtimeName: "应用托管 llama-server",
-          modelPath: "/models/qwen2_5-vl-3b.gguf",
+          modelPath: "/models/qwen3_5-9b.gguf",
           modelId: defaultProfile.model.url,
           modelReady: true,
           runtimeReady: true,
@@ -170,14 +120,22 @@ describe("ModelSettings", () => {
 
     expect(await screen.findByRole("button", { name: "云端 AI" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
-    expect(screen.getByDisplayValue("gpt-4.1-mini")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("qwen3.6-flash")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("已保存；留空将保持不变")).toHaveValue("");
+    expect(screen.queryByDisplayValue("sk-test")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /测试连接/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "启用深度思考" })).not.toBeChecked();
     expect(screen.getByText("服务地址")).toBeInTheDocument();
     expect(screen.queryByText("模型档案")).not.toBeInTheDocument();
     expect(screen.queryByText("应用托管 llama-server")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "检查" })).not.toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalledWith("inference.local.profiles", undefined);
     expect(invoke).not.toHaveBeenCalledWith("inference.runtime.status", undefined);
+    fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.config.save", expect.objectContaining({
+      chatModel: "qwen3.6-flash",
+      enableThinking: false,
+    })));
   });
 
   it("renders only local model controls in local mode", async () => {
@@ -185,10 +143,17 @@ describe("ModelSettings", () => {
     render(<ModelSettings />);
 
     expect(await screen.findByRole("button", { name: "本地 AI" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByText("高级设置"));
-    expect(screen.getByText("模型档案")).toBeInTheDocument();
-    expect(await screen.findByText(/Qwen2.5-VL 3B 多模态/)).toBeInTheDocument();
-    expect(screen.queryByText(/Qwen2.5-3B-Instruct/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /选择 Qwen3.5 4B 轻量多模态/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /选择 Qwen3.5 9B 标准多模态/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /选择 Qwen3.6 35B-A3B 高配多模态/ })).toBeInTheDocument();
+    expect(screen.getByText("推荐")).toBeInTheDocument();
+    // Two-column design states multimodal support once in the 选择模型 header.
+    expect(screen.getByText("均支持图片 + 文本")).toBeInTheDocument();
+    expect(screen.getByText(/A3B 不等于只占 3B 内存/)).toBeInTheDocument();
+    const advanced = screen.getByRole("button", { name: "高级设置" });
+    expect(advanced).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(advanced);
+    expect(advanced).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "修复" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "清理" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "检查" })).toBeInTheDocument();
@@ -204,7 +169,7 @@ describe("ModelSettings", () => {
         return {
           config: {
             baseUrl: "http://127.0.0.1:8000/v1",
-            apiKey: "",
+            hasApiKey: false,
             chatModel: qualityProfile.model.id,
           },
         };
@@ -216,9 +181,9 @@ describe("ModelSettings", () => {
             inferenceRuntime: {
               runtimeKind: "managed_llama_server",
               modelId: qualityProfile.model.url,
-              modelPath: "/models/qwen2_5-vl-7b.gguf",
-              mmprojModelId: qualityProfile.auxiliaryModels[0]!.url,
-              mmprojPath: "/models/qwen2_5-vl-7b-mmproj.gguf",
+              modelPath: "/models/qwen3_6-35b-a3b.gguf",
+              mmprojModelId: qualityProfile.auxiliaryModels![0]!.url,
+              mmprojPath: "/models/qwen3_6-35b-a3b-mmproj.gguf",
               command: "llama-server",
               host: "127.0.0.1",
               port: 8000,
@@ -227,7 +192,7 @@ describe("ModelSettings", () => {
         };
       }
       if (channel === "inference.local.profiles") {
-        return { profiles: [defaultProfile, qualityProfile] };
+        return { profiles: [...localModelProfiles] };
       }
       if (channel === "inference.runtime.status") {
         return {
@@ -235,7 +200,7 @@ describe("ModelSettings", () => {
           baseUrl: "http://127.0.0.1:8000/v1",
           runtimeKind: "managed_llama_server",
           runtimeName: "应用托管 llama-server",
-          modelPath: "/models/qwen2_5-vl-7b.gguf",
+          modelPath: "/models/qwen3_6-35b-a3b.gguf",
           modelId: qualityProfile.model.url,
           modelReady: true,
           runtimeReady: true,
@@ -246,20 +211,39 @@ describe("ModelSettings", () => {
 
     render(<ModelSettings />);
 
-    expect(await screen.findByText(/Qwen2.5-VL 7B 多模态/)).toBeInTheDocument();
-    expect(screen.getByText(qualityProfile.model.url)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /选择 Qwen3.6 35B-A3B 高配多模态/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("switches to a selected model with one primary action", async () => {
+    const invoke = mockBridge();
+    render(<ModelSettings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /选择 Qwen3.6 35B-A3B 高配多模态/ }));
+    fireEvent.click(screen.getByRole("button", { name: /下载并启用/ }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.runtime.stop", undefined));
+    expect(invoke).toHaveBeenCalledWith(
+      "inference.runtime.start",
+      expect.objectContaining({
+        modelId: qualityProfile.model.url,
+        requestId: expect.any(String),
+      }),
+    );
+    const startRequest = invoke.mock.calls.find(([channel]) => channel === "inference.runtime.start")?.[1];
+    expect(startRequest).not.toHaveProperty("command");
+    expect(startRequest).not.toHaveProperty("commandArgs");
   });
 
   it("exposes a local inference test action beside the runtime status", async () => {
     const invoke = mockBridge();
     render(<ModelSettings />);
 
-    expect(await screen.findByText("回复未测试")).toBeInTheDocument();
+    // settings resolve before first paint now, so the healthy state shows without a "未测试" flash
+    expect(await screen.findByText("回复功能正常")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "检查" }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.health", undefined));
-    expect(await screen.findByText("回复功能正常")).toBeInTheDocument();
     expect(screen.getByText("程序已安装")).toBeInTheDocument();
   });
 
@@ -270,7 +254,7 @@ describe("ModelSettings", () => {
         return {
           config: {
             baseUrl: "http://127.0.0.1:8000/v1",
-            apiKey: "",
+            hasApiKey: false,
             chatModel: defaultProfile.model.id,
           },
         };
@@ -290,7 +274,7 @@ describe("ModelSettings", () => {
         };
       }
       if (channel === "inference.local.profiles") {
-        return { profiles: [defaultProfile, qualityProfile] };
+        return { profiles: [...localModelProfiles] };
       }
       if (channel === "inference.runtime.status") {
         return {
@@ -304,16 +288,15 @@ describe("ModelSettings", () => {
           runtimeReady: true,
         };
       }
-      if (channel === "inference.modelscope.download") {
-        return { ok: false, modelPath: "", error: "模型文件校验失败，请重新下载或更换模型档案。" };
+      if (channel === "inference.runtime.start") {
+        return { ok: false, running: false, error: "模型文件校验失败，请重新下载或更换模型档案。" };
       }
       return { ok: true };
     });
 
     render(<ModelSettings />);
 
-    fireEvent.click(await screen.findByText("高级设置"));
-    fireEvent.click(await screen.findByRole("button", { name: /下载模型/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /下载并启用/ }));
 
     expect(await screen.findByText("模型文件校验失败，请重新下载或更换模型档案。")).toBeInTheDocument();
     expect(screen.queryByText(/下载中/)).not.toBeInTheDocument();
@@ -331,7 +314,7 @@ describe("ModelSettings", () => {
     const smallProfile = {
       ...defaultProfile,
       model: { ...defaultProfile.model, sizeBytes: 1000 },
-      auxiliaryModels: [{ ...defaultProfile.auxiliaryModels[0]!, sizeBytes: 1000 }],
+      auxiliaryModels: [{ ...defaultProfile.auxiliaryModels![0]!, sizeBytes: 1000 }],
     };
     window.customerAgent.on = vi.fn((channel, listener) => {
       if (channel === "inference.modelscope.download.progress") {
@@ -343,11 +326,11 @@ describe("ModelSettings", () => {
       if (channel === "inference.local.profiles") {
         return { profiles: [smallProfile] };
       }
-      if (channel === "inference.modelscope.download") {
+      if (channel === "inference.runtime.start") {
         return new Promise(() => undefined);
       }
       if (channel === "inference.config.get") {
-        return { config: { baseUrl: "http://127.0.0.1:8000/v1", apiKey: "", chatModel: smallProfile.model.id } };
+        return { config: { baseUrl: "http://127.0.0.1:8000/v1", hasApiKey: false, chatModel: smallProfile.model.id } };
       }
       if (channel === "settings.get") {
         return {
@@ -380,12 +363,11 @@ describe("ModelSettings", () => {
     });
 
     render(<ModelSettings />);
-    fireEvent.click(await screen.findByText("高级设置"));
-    fireEvent.click(await screen.findByRole("button", { name: /下载模型/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /下载并启用/ }));
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.modelscope.download", expect.any(Object)));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.runtime.start", expect.any(Object)));
     const request = (invoke.mock.calls as unknown as Array<[string, unknown]>)
-      .find(([channel]) => channel === "inference.modelscope.download")?.[1] as { requestId: string };
+      .find(([channel]) => channel === "inference.runtime.start")?.[1] as { requestId: string };
     act(() => {
       progressHandler?.({
         requestId: request.requestId,
@@ -414,7 +396,7 @@ describe("ModelSettings", () => {
         return {
           config: {
             baseUrl: "http://127.0.0.1:8000/v1",
-            apiKey: "",
+            hasApiKey: false,
             chatModel: defaultProfile.model.id,
           },
         };
@@ -434,7 +416,7 @@ describe("ModelSettings", () => {
         };
       }
       if (channel === "inference.local.profiles") {
-        return { profiles: [defaultProfile, qualityProfile] };
+        return { profiles: [...localModelProfiles] };
       }
       if (channel === "inference.runtime.status") {
         return {
@@ -481,7 +463,7 @@ describe("ModelSettings", () => {
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.model.delete", {
       modelId: defaultProfile.model.url,
-      auxiliaryModelIds: [defaultProfile.auxiliaryModels[0]!.url],
+      auxiliaryModelIds: [defaultProfile.auxiliaryModels![0]!.url],
     }));
   });
 
@@ -492,7 +474,7 @@ describe("ModelSettings", () => {
         return {
           config: {
             baseUrl: "http://127.0.0.1:8000/v1",
-            apiKey: "",
+            hasApiKey: false,
             chatModel: defaultProfile.model.id,
           },
         };
@@ -512,7 +494,7 @@ describe("ModelSettings", () => {
         };
       }
       if (channel === "inference.local.profiles") {
-        return { profiles: [defaultProfile, qualityProfile] };
+        return { profiles: [...localModelProfiles] };
       }
       if (channel === "inference.runtime.status") {
         return {
@@ -530,13 +512,13 @@ describe("ModelSettings", () => {
     });
     render(<ModelSettings />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "重启" }));
+    fireEvent.click(await screen.findByRole("button", { name: /下载并启用/ }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
         "inference.runtime.start",
         expect.objectContaining({
-          runtimeKind: "managed_llama_server",
+          modelId: defaultProfile.model.url,
           requestId: expect.any(String),
         }),
       );

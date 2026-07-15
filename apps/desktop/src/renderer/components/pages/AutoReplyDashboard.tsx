@@ -84,7 +84,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
             label="在线账号"
             value={onlineCount}
             suffix={
-              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 16, color: "#c2c2c2", ml: "-2px" }}>
+              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 16, color: tokens.color.text.tertiary, ml: "-2px" }}>
                 /{accountCount}
               </Typography>
             }
@@ -103,7 +103,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
             label="AI 自动率"
             value={autoReplyRate}
             suffix={
-              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 18, color: "#c2c2c2", ml: "-4px" }}>
+              <Typography component="span" sx={{ fontFamily: tokens.font.display, fontSize: 18, color: tokens.color.text.tertiary, ml: "-4px" }}>
                 %
               </Typography>
             }
@@ -144,10 +144,10 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
                     alignItems: "center",
                     gap: "14px",
                     p: "13px 2px",
-                    borderBottom: index === recentMessages.length - 1 ? "none" : "1px solid #f0f0f0",
+                    borderBottom: index === recentMessages.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
                   }}
                 >
-                  <Typography sx={{ fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#c2c2c2", width: 38, flex: "none" }}>
+                  <Typography sx={{ fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: tokens.color.text.tertiary, width: 38, flex: "none" }}>
                     {new Date(message.receivedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                   </Typography>
                   <Typography noWrap sx={{ fontSize: 13, fontWeight: 600, width: 100, flex: "none" }}>
@@ -175,7 +175,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
                 ["已忽略", ignoredDraftCount, tokens.color.text.tertiary],
               ] as const).map(([label, value, color]) => (
                 <Box key={label} sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: "#525252" }}>{label}</Typography>
+                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary }}>{label}</Typography>
                   <Typography sx={{ fontFamily: tokens.font.display, fontWeight: 500, fontSize: 17, color }}>{value}</Typography>
                 </Box>
               ))}
@@ -190,7 +190,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
               </Typography>
             }
           >
-            <Box sx={{ height: 4, borderRadius: "2px", bgcolor: "#f0f0f0", overflow: "hidden", mb: 1 }}>
+            <Box sx={{ height: 4, borderRadius: "2px", bgcolor: tokens.color.control.fill, overflow: "hidden", mb: 1 }}>
               <Box
                 sx={{
                   width: modelReady ? "100%" : "0%",
@@ -216,7 +216,7 @@ export const AutoReplyDashboard: React.FC<AutoReplyDashboardProps> = ({ onNaviga
               diagnostics.map((log) => (
                 <Typography
                   key={log.id}
-                  sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.5, color: "#525252", mb: 1 }}
+                  sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.5, color: tokens.color.text.secondary, mb: 1 }}
                 >
                   — {businessDiagnosticText(log.message)}
                 </Typography>

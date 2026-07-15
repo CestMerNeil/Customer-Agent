@@ -111,8 +111,11 @@ export class PddProductSyncService {
 
         try {
           const detail = await retry(
-            () => this.deps.api.getProductDetail(product.goodsId, optionalAntiContent(this.deps.antiContent)),
-            retryOptions(maxAttempts, options.retryDelayMs),
+            () => this.deps.api.getProductDetail(product.goodsId, {
+              ...optionalAntiContent(this.deps.antiContent),
+              ...(options.signal ? { signal: options.signal } : {}),
+            }),
+            retryOptions(maxAttempts, options.retryDelayMs, options.signal),
           );
           const payload = await this.buildKnowledgeSavePayload(product, detail);
           const record = await this.deps.saveProductKnowledge({
@@ -136,6 +139,9 @@ export class PddProductSyncService {
             });
           }
         } catch (error) {
+          if (options.signal?.aborted) {
+            return this.cancel(progress);
+          }
           progress.failed += 1;
           progress.failures.push({
             goodsId: product.goodsId,
@@ -149,6 +155,9 @@ export class PddProductSyncService {
       this.emit(progress);
       return progress;
     } catch (error) {
+      if (options.signal?.aborted) {
+        return this.cancel(progress);
+      }
       progress.phase = "failed";
       progress.failed += 1;
       progress.failures.push({ error: errorMessage(error), retryable: true });
@@ -173,8 +182,13 @@ export class PddProductSyncService {
       let result: PddProductListResult;
       try {
         result = await retry(
-          () => this.deps.api.getProductList({ page, pageSize, ...optionalAntiContent(this.deps.antiContent) }),
-          retryOptions(maxAttempts, options.retryDelayMs),
+          () => this.deps.api.getProductList({
+            page,
+            pageSize,
+            ...optionalAntiContent(this.deps.antiContent),
+            ...(options.signal ? { signal: options.signal } : {}),
+          }),
+          retryOptions(maxAttempts, options.retryDelayMs, options.signal),
         );
       } catch (error) {
         progress.failed += 1;
@@ -290,23 +304,60 @@ function optionalAntiContent(antiContent?: string): { antiContent?: string } {
   return antiContent ? { antiContent } : {};
 }
 
-function retryOptions(maxAttempts: number, retryDelayMs?: number): { maxAttempts: number; retryDelayMs?: number } {
-  return retryDelayMs === undefined ? { maxAttempts } : { maxAttempts, retryDelayMs };
+function retryOptions(
+  maxAttempts: number,
+  retryDelayMs?: number,
+  signal?: AbortSignal,
+): { maxAttempts: number; retryDelayMs?: number; signal?: AbortSignal } {
+  return {
+    maxAttempts,
+    ...(retryDelayMs === undefined ? {} : { retryDelayMs }),
+    ...(signal ? { signal } : {}),
+  };
 }
 
-async function retry<T>(operation: () => Promise<T>, options: { maxAttempts: number; retryDelayMs?: number }): Promise<T> {
+async function retry<T>(
+  operation: () => Promise<T>,
+  options: { maxAttempts: number; retryDelayMs?: number; signal?: AbortSignal },
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= options.maxAttempts; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw new Error("商品同步已取消。");
+    }
     try {
       return await operation();
     } catch (error) {
       lastError = error;
+      if (options.signal?.aborted) {
+        throw new Error("商品同步已取消。");
+      }
       if (attempt < options.maxAttempts && options.retryDelayMs) {
-        await new Promise((resolve) => setTimeout(resolve, options.retryDelayMs));
+        await waitForRetryDelay(options.retryDelayMs, options.signal);
       }
     }
   }
   throw lastError;
+}
+
+/** Waits between retry attempts while allowing product-sync cancellation. */
+async function waitForRetryDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(finish, delayMs);
+    const onAbort = () => finish(new Error("商品同步已取消。"));
+    function finish(error?: Error): void {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
 }
 
 function errorMessage(error: unknown): string {

@@ -31,6 +31,10 @@ export type {
   ProductSyncMode,
   ProductSyncPhase,
   ProductSyncProgress,
+  RendererAccountRecord,
+  RendererAppSettings,
+  RendererInferenceConfig,
+  RendererInferenceRuntimeConfig,
   ReplyDraftRecord
 } from "./domain.js";
 export type {
@@ -50,6 +54,16 @@ export {
   validateAcceptanceRecord,
   validateAcceptanceRecordSet
 } from "./acceptance.js";
+export {
+  isEvidenceOnlyReleasePath,
+  validateReleaseIdentity,
+  validateReleasePublishTarget,
+} from "./release-identity.js";
+export type {
+  ReleaseIdentityInput,
+  ReleaseIdentityValidationResult,
+  ReleasePublishTargetInput,
+} from "./release-identity.js";
 export {
   buildDefaultPddCalibrationSkeleton,
   summarizePddCalibrationRecords,
@@ -104,6 +118,8 @@ export type {
   AccountLoginResult,
   AppUpdateState,
   AppUpdateStatus,
+  DocumentKnowledgePreviewEntry,
+  DocumentKnowledgeProgressEvent,
   GenerateReplyRequest,
   GenerateReplyResult,
   IpcChannel,

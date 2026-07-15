@@ -1,5 +1,6 @@
 import path from "node:path";
-import { rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, rename, rm } from "node:fs/promises";
 import WebSocketRuntime from "ws";
 import { canTransitionMessageState, redactSensitiveText } from "@customer-agent/core";
 import type {
@@ -15,9 +16,11 @@ import { PddHttpClient } from "./client.js";
 import { pddWsBaseUrl } from "./endpoints.js";
 import { cookieListToJar, parseCookieJar, type BrowserCookie } from "./cookies.js";
 import { isQueueablePddMessage, normalizePddMessage } from "./normalizer.js";
+import { withPddBrowserProfileLock } from "./profile-lock.js";
 
 type PddFailureCategory = "network" | "pdd-token" | "cookie" | "session-expiry" | "account-offline" | "risk-control" | "manual-relogin" | "unknown";
 
+/** Mutable resources and retry metadata owned by one account generation. */
 interface PddRuntimeConnection {
   accountId: string;
   socket: WebSocket;
@@ -32,6 +35,7 @@ interface PddRuntimeConnection {
   lastError?: string | undefined;
   requiresRelogin?: boolean | undefined;
   reconnectCooldownUntil?: number | undefined;
+  generation: number;
 }
 
 export interface PddAccountRuntimeState {
@@ -60,7 +64,12 @@ interface PddServiceOptions {
   log?: (level: "info" | "warning" | "error", message: string) => Promise<void>;
   playwright?: PlaywrightModule;
   loginTimeoutMs?: number;
+  browserCloseTimeoutMs?: number;
+  /** Overrides contained profile deletion for deterministic failure-path tests. */
+  removeProfileDir?: (profileDir: string) => Promise<void>;
 }
+
+const DEFAULT_BROWSER_CLOSE_TIMEOUT_MS = 5_000;
 
 interface ConnectionFailure {
   category: PddFailureCategory;
@@ -75,6 +84,14 @@ interface FailureContext {
   operation: "token" | "online" | "session-health";
 }
 
+/** Minimal persistent Playwright context surface used by PDD login flows. */
+interface PlaywrightBrowserContext {
+  pages(): Array<PlaywrightPage>;
+  newPage(): Promise<PlaywrightPage>;
+  cookies(): Promise<BrowserCookie[]>;
+  close(): Promise<void>;
+}
+
 interface PlaywrightModule {
   chromium: {
     launchPersistentContext: (
@@ -83,12 +100,7 @@ interface PlaywrightModule {
         headless: boolean;
         args: string[];
       },
-    ) => Promise<{
-      pages(): Array<PlaywrightPage>;
-      newPage(): Promise<PlaywrightPage>;
-      cookies(): Promise<BrowserCookie[]>;
-      close(): Promise<void>;
-    }>;
+    ) => Promise<PlaywrightBrowserContext>;
   };
 }
 
@@ -115,12 +127,40 @@ interface AntiContentCapture {
   dispose(): void;
 }
 
+/** Chromium flags used for PDD browser sessions while preserving the browser sandbox. */
+const pddBrowserArgs = [
+  "--disable-gpu",
+  "--disable-dev-shm-usage",
+  "--disable-blink-features=AutomationControlled",
+  "--disable-notifications",
+] as const;
+
+/** Stable error returned when stop or dispose invalidates an in-flight start. */
+const START_CANCELLED_MESSAGE = "拼多多账号启动已取消。";
+
+/** Coordinates PDD browser sessions, account persistence, and WebSocket runtime state. */
 export class PddService {
   private readonly connections = new Map<string, PddRuntimeConnection>();
   private readonly startLocks = new Map<string, Promise<void>>();
+  private readonly generations = new Map<string, number>();
+  private readonly browserContexts = new Set<PlaywrightBrowserContext>();
+  private readonly backgroundTasks = new Set<Promise<void>>();
+  private readonly loggingOut = new Set<string>();
+  private disposed = false;
 
+  /**
+   * Creates a PDD coordinator with optional persistence and browser dependencies.
+   *
+   * @param options Persistence, logging, and browser dependencies.
+   */
   constructor(private readonly options: PddServiceOptions = {}) {}
 
+  /**
+   * Opens an interactive browser session and persists its verified account state.
+   *
+   * @param request Login channel, username, and optional password.
+   * @returns The saved account identifiers or a sanitized failure.
+   */
   async login(request: AccountLoginRequest): Promise<AccountLoginResult> {
     if (!request.username.trim()) {
       return { ok: false, error: "请输入拼多多账号" };
@@ -130,46 +170,61 @@ export class PddService {
     }
 
     try {
+      this.assertActive();
       const playwright = this.options.playwright ?? await loadPlaywright();
-      const userDataDir = path.join(this.options.dataDir, "pdd-profiles", safePathSegment(request.username));
-      const context = await playwright.chromium.launchPersistentContext(userDataDir, {
-        headless: false,
-        args: [
-          "--disable-gpu",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-notifications",
-        ],
-      });
-      try {
-        const page = context.pages()[0] ?? await context.newPage();
-        const antiContentCapture = createAntiContentCapture(page);
+      const userDataDir = await resolvePddProfileDir(this.options.dataDir, request.username);
+      return await withPddBrowserProfileLock(userDataDir, async () => {
+        this.assertActive();
+        const context = await playwright.chromium.launchPersistentContext(userDataDir, {
+          headless: false,
+          args: [...pddBrowserArgs],
+        });
+        this.browserContexts.add(context);
         try {
-          const refreshed = await this.refreshExistingSession(page);
-          if (!refreshed) {
-            await this.performPasswordLogin(page, request);
+          const page = context.pages()[0] ?? await context.newPage();
+          const antiContentCapture = createAntiContentCapture(page);
+          try {
+            const refreshed = await this.refreshExistingSession(page);
+            if (!refreshed) {
+              await this.performPasswordLogin(page, request);
+            }
+            const account = await this.finalizeLogin(page, context, request.username, antiContentCapture);
+            this.nextGeneration(account.id);
+            this.closeConnection(account.id);
+            await this.log("info", `拼多多账号登录成功：${request.username}`);
+            return { ok: true, accountId: account.id, shopId: account.shopId };
+          } finally {
+            antiContentCapture.dispose();
           }
-          const account = await this.finalizeLogin(page, context, request.username, antiContentCapture);
-          await this.log("info", `拼多多账号登录成功：${request.username}`);
-          return { ok: true, accountId: account.id, shopId: account.shopId };
         } finally {
-          antiContentCapture.dispose();
+          this.browserContexts.delete(context);
+          await closeBrowserContext(context, this.options.browserCloseTimeoutMs);
         }
-      } finally {
-        await context.close();
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await this.logDiagnostic("pdd", "session_expiry", {
-        account: request.username,
-        error: message,
       });
-      await this.log("error", `拼多多登录失败：${message}`);
-      return { ok: false, error: message };
+    } catch (error) {
+      const failure = classifyConnectionError(error, {
+        accountId: "",
+        shopId: "",
+        username: request.username,
+        operation: "session-health",
+      });
+      if (failure.requiresRelogin) {
+        await this.logDiagnostic("pdd", "session_expiry", {
+          account: request.username,
+          error: failure.summary,
+        });
+      }
+      await this.log("error", `拼多多登录失败：${failure.summary}`);
+      return { ok: false, error: failure.summary };
     }
   }
 
+  /**
+   * Refreshes a saved account through its persistent browser profile.
+   *
+   * @param accountId Account whose browser session should be refreshed.
+   * @returns The refreshed account or a failure requiring user action.
+   */
   async refreshAccountSession(accountId: string): Promise<{ ok: boolean; account?: AccountRecord; error?: string }> {
     const account = await this.options.getAccount?.(accountId);
     if (!account) {
@@ -180,70 +235,114 @@ export class PddService {
     }
 
     try {
+      this.assertActive();
       const playwright = this.options.playwright ?? await loadPlaywright();
-      const userDataDir = path.join(this.options.dataDir, "pdd-profiles", safePathSegment(account.username));
-      const context = await playwright.chromium.launchPersistentContext(userDataDir, {
-        headless: true,
-        args: [
-          "--disable-gpu",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-notifications",
-        ],
-      });
-      try {
-        const page = context.pages()[0] ?? await context.newPage();
-        const antiContentCapture = createAntiContentCapture(page);
+      const userDataDir = await resolvePddProfileDir(this.options.dataDir, account.username);
+      return await withPddBrowserProfileLock(userDataDir, async () => {
+        this.assertActive();
+        const context = await playwright.chromium.launchPersistentContext(userDataDir, {
+          headless: true,
+          args: [...pddBrowserArgs],
+        });
+        this.browserContexts.add(context);
         try {
-          const refreshed = await this.refreshExistingSession(page);
-          if (!refreshed) {
-            return { ok: false, error: "PDD 持久化会话已失效，请在账号页重新登录。" };
+          const page = context.pages()[0] ?? await context.newPage();
+          const antiContentCapture = createAntiContentCapture(page);
+          try {
+            const refreshed = await this.refreshExistingSession(page);
+            if (!refreshed) {
+              return { ok: false, error: "PDD 持久化会话已失效，请在账号页重新登录。" };
+            }
+            const refreshedAccount = await this.finalizeLogin(page, context, account.username, antiContentCapture, account.id);
+            await this.log("info", `拼多多账号会话已刷新：${account.username}`);
+            return { ok: true, account: refreshedAccount };
+          } finally {
+            antiContentCapture.dispose();
           }
-          const refreshedAccount = await this.finalizeLogin(page, context, account.username, antiContentCapture, account.id);
-          await this.log("info", `拼多多账号会话已刷新：${account.username}`);
-          return { ok: true, account: refreshedAccount };
         } finally {
-          antiContentCapture.dispose();
+          this.browserContexts.delete(context);
+          await closeBrowserContext(context, this.options.browserCloseTimeoutMs);
         }
-      } finally {
-        await context.close();
-      }
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = sanitizeServiceError(error);
       await this.log("warning", `拼多多账号会话刷新失败：${message}`);
       return { ok: false, error: message };
     }
   }
 
+  /**
+   * Starts one account unless it is already healthy or a stop invalidates the request.
+   *
+   * @param accountId Account to start.
+   * @returns Whether a current socket is running or was started.
+   */
   async startAccount(accountId: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.disposed || this.loggingOut.has(accountId)) {
+      return { ok: false, error: START_CANCELLED_MESSAGE };
+    }
+    const current = this.connections.get(accountId);
+    if (current && !current.stopped && !current.requiresRelogin && current.state !== "error") {
+      return { ok: true };
+    }
+    const generation = this.nextGeneration(accountId);
     const account = await this.options.getAccount?.(accountId);
     if (!account) {
       return { ok: false, error: "找不到要启动的拼多多账号。" };
     }
-    if (this.connections.has(accountId)) {
-      return { ok: true };
+    if (!account.cookies) {
+      return { ok: false, error: "账号缺少可用会话，请先完成真实拼多多登录。" };
     }
     try {
-      await this.startConnection(account);
+      this.assertGeneration(accountId, generation);
+      await this.startConnection(account, false, generation);
       return { ok: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      if (!this.isCurrentGeneration(accountId, generation)) {
+        return { ok: false, error: START_CANCELLED_MESSAGE };
+      }
+      const message = sanitizeServiceError(error);
       await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status: "error", error: message }));
       await this.log("error", `启动拼多多账号失败：${message}`);
       return { ok: false, error: message };
     }
   }
 
+  /**
+   * Invalidates in-flight work and stops one account without affecting others.
+   *
+   * @param accountId Account to stop.
+   * @returns A successful idempotent stop result.
+   */
   async stopAccount(accountId: string): Promise<{ ok: boolean; error?: string }> {
-    const connection = this.connections.get(accountId);
+    this.nextGeneration(accountId);
     this.startLocks.delete(accountId);
+    this.closeConnection(accountId);
+    const account = await this.options.getAccount?.(accountId);
+    if (account) {
+      await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status: "offline" }));
+      await this.log("info", `拼多多账号已停止：${account.username}`);
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Closes and removes the currently registered socket for one account.
+   *
+   * @param accountId Account whose current socket should be removed.
+   */
+  private closeConnection(accountId: string): void {
+    const connection = this.connections.get(accountId);
     if (connection) {
       connection.stopped = true;
       connection.state = "stopped";
       this.clearConnectionTimers(connection);
       connection.requiresRelogin = false;
       connection.lastError = undefined;
+      connection.socket.onopen = null;
+      connection.socket.onmessage = null;
+      connection.socket.onclose = null;
+      connection.socket.onerror = null;
       try {
         connection.socket.close();
       } catch {
@@ -251,12 +350,6 @@ export class PddService {
       }
       this.connections.delete(accountId);
     }
-    const account = await this.options.getAccount?.(accountId);
-    if (account) {
-      await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status: "offline" }));
-      await this.log("info", `拼多多账号已停止：${account.username}`);
-    }
-    return { ok: true };
   }
 
   async setAccountAvailability(
@@ -268,35 +361,71 @@ export class PddService {
       return { ok: false, error: "账号缺少可用会话，请先完成真实拼多多登录。" };
     }
 
-    const api = this.createApi(account.cookies);
-    await api.setOnlineStatus(status satisfies PddCustomerServiceAvailability);
-    await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status, error: "" }));
-    await this.log("info", `拼多多账号接待状态已更新：${account.username} ${status}`);
-    return { ok: true };
+    try {
+      const api = this.createApi(account.cookies);
+      await api.setOnlineStatus(status satisfies PddCustomerServiceAvailability);
+      await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status, error: "" }));
+      await this.log("info", `拼多多账号接待状态已更新：${account.username} ${status}`);
+      return { ok: true };
+    } catch (error) {
+      const message = sanitizeServiceError(error);
+      await this.log("error", `拼多多账号接待状态更新失败：${message}`);
+      return { ok: false, error: message };
+    }
   }
 
+  /**
+   * Clears saved credentials and removes only this account's contained profile.
+   *
+   * @param accountId Account to log out.
+   * @returns Whether credentials and best-effort profile cleanup completed.
+   */
   async logoutAccount(accountId: string): Promise<{ ok: boolean; error?: string }> {
-    const account = await this.options.getAccount?.(accountId);
-    if (!account) {
-      return { ok: false, error: "找不到要退出登录的拼多多账号。" };
+    if (this.loggingOut.has(accountId)) {
+      return { ok: false, error: "拼多多账号正在退出登录。" };
     }
-    if (!this.options.saveAccount) {
-      return { ok: false, error: "PDD 退出登录服务缺少账号保存回调。" };
+    this.loggingOut.add(accountId);
+    try {
+      const account = await this.options.getAccount?.(accountId);
+      if (!account) {
+        return { ok: false, error: "找不到要退出登录的拼多多账号。" };
+      }
+      if (!this.options.saveAccount) {
+        return { ok: false, error: "PDD 退出登录服务缺少账号保存回调。" };
+      }
+
+      this.nextGeneration(accountId);
+      this.startLocks.delete(accountId);
+      this.closeConnection(accountId);
+
+      const loggedOutAccount: AccountRecord = { ...account, status: "offline" };
+      delete loggedOutAccount.cookies;
+      delete loggedOutAccount.error;
+      await this.options.saveAccount(withoutRuntimeAccountFields(loggedOutAccount));
+
+      if (this.options.dataDir) {
+        const profileRoot = path.resolve(this.options.dataDir, "pdd-profiles");
+        const profileDir = await resolvePddProfileDir(this.options.dataDir, account.username);
+        assertContainedProfilePath(profileRoot, profileDir);
+        try {
+          await withPddBrowserProfileLock(
+            profileDir,
+            () => this.options.removeProfileDir?.(profileDir) ?? rm(profileDir, { recursive: true, force: true }),
+          );
+        } catch {
+          const message = "登录凭据已清除，但 PDD 浏览器会话资料清理失败。";
+          await this.log("warning", message);
+          return { ok: false, error: message };
+        }
+      }
+
+      await this.log("info", `拼多多账号已退出登录：${account.username}`);
+      return { ok: true };
+    } finally {
+      this.nextGeneration(accountId);
+      this.closeConnection(accountId);
+      this.loggingOut.delete(accountId);
     }
-
-    await this.stopAccount(accountId);
-
-    const loggedOutAccount: AccountRecord = { ...account, status: "offline" };
-    delete loggedOutAccount.cookies;
-    delete loggedOutAccount.error;
-    await this.options.saveAccount(withoutRuntimeAccountFields(loggedOutAccount));
-
-    if (this.options.dataDir) {
-      const profileDir = path.join(this.options.dataDir, "pdd-profiles", safePathSegment(account.username));
-      await rm(profileDir, { recursive: true, force: true });
-    }
-    await this.log("info", `拼多多账号已退出登录：${account.username}`);
-    return { ok: true };
   }
 
   getAccountRuntimeState(accountId: string): {
@@ -327,13 +456,123 @@ export class PddService {
     return states;
   }
 
-  private async startConnection(account: AccountRecord, isReconnect = false): Promise<void> {
-    const existingLock = this.startLocks.get(account.id);
-    if (existingLock) {
-      await existingLock;
+  /**
+   * Permanently stops this service and closes sockets, timers, and browser contexts.
+   *
+   * @returns A promise settled after all tracked browser closes finish.
+   */
+  async dispose(): Promise<void> {
+    if (this.disposed) {
       return;
     }
-    const operation = this.internalStartConnection(account, isReconnect);
+    this.disposed = true;
+    for (const accountId of this.generations.keys()) {
+      this.nextGeneration(accountId);
+    }
+    const starts = [...this.startLocks.values()];
+    this.startLocks.clear();
+    for (const accountId of [...this.connections.keys()]) {
+      this.closeConnection(accountId);
+    }
+    const contexts = [...this.browserContexts];
+    this.browserContexts.clear();
+    await Promise.allSettled([
+      ...contexts.map((context) => closeBrowserContext(context, this.options.browserCloseTimeoutMs)),
+      ...starts,
+      ...this.backgroundTasks,
+    ]);
+  }
+
+  /**
+   * Advances the cancellation token for one account.
+   *
+   * @param accountId Account whose prior work becomes stale.
+   * @returns The new generation number.
+   */
+  private nextGeneration(accountId: string): number {
+    const generation = (this.generations.get(accountId) ?? 0) + 1;
+    this.generations.set(accountId, generation);
+    return generation;
+  }
+
+  /**
+   * Reports whether an asynchronous operation still owns the account.
+   *
+   * @param accountId Account being checked.
+   * @param generation Generation owned by the operation.
+   * @returns True only while the service and generation remain current.
+   */
+  private isCurrentGeneration(accountId: string, generation: number): boolean {
+    return !this.disposed && this.generations.get(accountId) === generation;
+  }
+
+  /**
+   * Rejects cancelled account work before it can create or publish resources.
+   *
+   * @param accountId Account being checked.
+   * @param generation Generation owned by the operation.
+   * @throws If stop, replacement, or dispose invalidated the operation.
+   */
+  private assertGeneration(accountId: string, generation: number): void {
+    if (!this.isCurrentGeneration(accountId, generation)) {
+      throw new Error(START_CANCELLED_MESSAGE);
+    }
+  }
+
+  /** @throws If the service has already been disposed. */
+  private assertActive(): void {
+    if (this.disposed) {
+      throw new Error("PDD 服务已停止。");
+    }
+  }
+
+  /**
+   * Reports whether a socket is still the current registered account connection.
+   *
+   * @param connection Candidate connection.
+   * @returns True only for the live connection owned by the current generation.
+   */
+  private isLiveConnection(connection: PddRuntimeConnection): boolean {
+    return !connection.stopped
+      && this.connections.get(connection.accountId) === connection
+      && this.isCurrentGeneration(connection.accountId, connection.generation);
+  }
+
+  /** Tracks asynchronous socket callbacks so dispose can wait before the database closes. */
+  private trackBackground(operation: Promise<void>): void {
+    const tracked = operation
+      .catch((error) => {
+        console.error("PDD background task failed", redactSensitiveText(error instanceof Error ? error.message : String(error)));
+      })
+      .finally(() => {
+        this.backgroundTasks.delete(tracked);
+      });
+    this.backgroundTasks.add(tracked);
+  }
+
+  /**
+   * Serializes starts while allowing a newer generation to replace cancelled work.
+   *
+   * @param account Account snapshot used for API authentication.
+   * @param isReconnect Whether this is an automatic retry.
+   * @param generation Generation that owns the start.
+   * @returns A promise settled after startup is published or cancelled.
+   */
+  private async startConnection(account: AccountRecord, isReconnect: boolean, generation: number): Promise<void> {
+    const existingLock = this.startLocks.get(account.id);
+    if (existingLock) {
+      try {
+        await existingLock;
+      } catch {
+        // The current generation decides whether a replacement may continue.
+      }
+      this.assertGeneration(account.id, generation);
+      const active = this.connections.get(account.id);
+      if (active && !active.stopped && active.state !== "error") {
+        return;
+      }
+    }
+    const operation = this.internalStartConnection(account, isReconnect, generation);
     this.startLocks.set(account.id, operation);
     try {
       await operation;
@@ -344,42 +583,82 @@ export class PddService {
     }
   }
 
-  private async internalStartConnection(account: AccountRecord, isReconnect = false): Promise<void> {
+  /**
+   * Builds a socket only while the caller's generation remains current.
+   *
+   * @param account Account snapshot used for API authentication.
+   * @param isReconnect Whether this is an automatic retry.
+   * @param generation Generation that owns all created resources.
+   * @returns A promise settled after persistence and logging complete.
+   * @throws If authentication, persistence, or generation validation fails.
+   */
+  private async internalStartConnection(account: AccountRecord, isReconnect: boolean, generation: number): Promise<void> {
+    this.assertGeneration(account.id, generation);
     const existing = this.connections.get(account.id);
     if (existing) {
-      if (existing.stopped) {
-        this.connections.delete(account.id);
-      } else {
-        this.clearConnectionTimers(existing);
-        if (existing.socket.readyState === existing.socket.OPEN || existing.socket.readyState === existing.socket.CONNECTING) {
-          existing.socket.close();
-        }
-      }
+      this.closeConnection(account.id);
     }
 
-    const api = this.createApi(account.cookies);
+    let activeAccount = account;
+    let api = this.createApi(activeAccount.cookies);
+    let refreshedSession = false;
     if (isReconnect) {
-      const health = await this.checkSessionHealth(account, api);
+      const health = await this.checkSessionHealth(activeAccount, api);
+      this.assertGeneration(account.id, generation);
       if (health.requiresRelogin || health.category === "session-expiry") {
-        const connection = this.connections.get(account.id);
-        if (connection) {
-          connection.failureCategory = health.category;
-          connection.lastError = health.message;
-          connection.requiresRelogin = true;
+        const refreshed = await this.refreshAccountSession(activeAccount.id);
+        this.assertGeneration(account.id, generation);
+        if (refreshed.ok && refreshed.account) {
+          activeAccount = refreshed.account;
+          api = this.createApi(activeAccount.cookies);
+          refreshedSession = true;
+        } else {
+          this.recordFailureState(activeAccount.id, {
+            category: health.category,
+            summary: refreshed.error ?? health.message,
+            requiresRelogin: true,
+          });
+          await this.logDiagnostic("pdd", "session_expiry", {
+            accountId: activeAccount.id,
+            shopId: activeAccount.shopId,
+            username: activeAccount.username,
+            error: refreshed.error ?? health.message,
+          });
+          throw new Error(refreshed.error ?? health.message);
         }
-        await this.logDiagnostic("pdd", "session_expiry", {
-          accountId: account.id,
-          shopId: account.shopId,
-          username: account.username,
-          error: health.message,
-        });
-        throw new Error(health.message);
       }
     }
 
-    const token = await this.executeWithFailureCategory(account, isReconnect, "start-token", () => api.getChatToken());
-    await this.executeWithFailureCategory(account, isReconnect, "start-online", () => api.setOnlineStatus("online"));
+    let token: string;
+    try {
+      token = await this.executeWithFailureCategory(activeAccount, isReconnect, "start-token", () => api.getChatToken());
+      this.assertGeneration(account.id, generation);
+      await this.executeWithFailureCategory(activeAccount, isReconnect, "start-online", () => api.setOnlineStatus("online"));
+      this.assertGeneration(account.id, generation);
+    } catch (error) {
+      const failure = classifyConnectionError(error, {
+        accountId: activeAccount.id,
+        shopId: activeAccount.shopId,
+        username: activeAccount.username,
+        operation: "token",
+      });
+      if (refreshedSession || !failure.requiresRelogin) {
+        throw error;
+      }
+      const refreshed = await this.refreshAccountSession(activeAccount.id);
+      this.assertGeneration(account.id, generation);
+      if (!refreshed.ok || !refreshed.account) {
+        throw new Error(refreshed.error ?? failure.summary);
+      }
+      activeAccount = refreshed.account;
+      api = this.createApi(activeAccount.cookies);
+      token = await this.executeWithFailureCategory(activeAccount, isReconnect, "reconnect-token", () => api.getChatToken());
+      this.assertGeneration(account.id, generation);
+      await this.executeWithFailureCategory(activeAccount, isReconnect, "reconnect-online", () => api.setOnlineStatus("online"));
+      this.assertGeneration(account.id, generation);
+    }
 
+    this.assertGeneration(account.id, generation);
     const SocketCtor = resolveWebSocketCtor();
     if (!SocketCtor) {
       throw new Error("当前 Node/Electron 运行时没有 WebSocket 构造器。");
@@ -392,39 +671,63 @@ export class PddService {
     });
     const socket = new SocketCtor(`${pddWsBaseUrl()}/?${params.toString()}`);
     const connection: PddRuntimeConnection = {
-      accountId: account.id,
+      accountId: activeAccount.id,
       socket,
       state: "connecting",
       stopped: false,
       startedAt: existing?.startedAt ?? new Date().toISOString(),
       reconnectCount: isReconnect ? (existing?.reconnectCount ?? 0) + 1 : 0,
       requiresRelogin: false,
+      generation,
     };
     if (existing?.lastHeartbeatAt) {
       connection.lastHeartbeatAt = existing.lastHeartbeatAt;
     }
-    this.connections.set(account.id, connection);
+    this.connections.set(activeAccount.id, connection);
 
     socket.onopen = () => {
+      if (!this.isLiveConnection(connection)) {
+        socket.close();
+        return;
+      }
       connection.state = "running";
       connection.lastHeartbeatAt = new Date().toISOString();
       connection.lastError = undefined;
-      this.scheduleHeartbeatProbe(account, connection);
-      void this.log("info", `拼多多账号 WebSocket 已连接：${account.username}`);
+      this.scheduleHeartbeatProbe(activeAccount, connection);
+      this.trackBackground(this.log("info", `拼多多账号 WebSocket 已连接：${activeAccount.username}`));
     };
     socket.onmessage = (event) => {
+      if (!this.isLiveConnection(connection)) {
+        return;
+      }
       connection.lastHeartbeatAt = new Date().toISOString();
-      void this.handleSocketMessage(account, event.data);
+      this.trackBackground(this.handleSocketMessage(activeAccount, event.data));
     };
     socket.onclose = (event) => {
-      this.handleSocketClose(account, connection, event);
+      this.trackBackground(this.handleSocketClose(activeAccount, connection, event));
     };
     socket.onerror = () => {
-      void this.handleSocketError(account, connection);
+      this.trackBackground(this.handleSocketError(activeAccount, connection));
     };
 
-    await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status: "online", error: "" }));
-    await this.log("info", `拼多多账号已启动：${account.username}`);
+    try {
+      await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...activeAccount, status: "online", error: "" }));
+      this.assertGeneration(account.id, generation);
+      await this.log("info", `拼多多账号已启动：${activeAccount.username}`);
+      this.assertGeneration(account.id, generation);
+    } catch (error) {
+      connection.stopped = true;
+      this.clearConnectionTimers(connection);
+      try {
+        socket.close();
+      } catch {
+        // Best-effort cleanup; the original startup error remains authoritative.
+      }
+      if (this.connections.get(activeAccount.id) === connection) {
+        this.connections.delete(activeAccount.id);
+      }
+      throw error;
+    }
   }
 
   private async checkSessionHealth(account: AccountRecord, api: PddApi): Promise<{ message: string; category: PddFailureCategory; requiresRelogin: boolean }> {
@@ -488,18 +791,26 @@ export class PddService {
     connection.requiresRelogin = failure?.requiresRelogin;
   }
 
+  /**
+   * Records an unexpected close and schedules a bounded reconnect when eligible.
+   *
+   * @param account Account owning the socket.
+   * @param connection Connection that emitted the close.
+   * @param event Optional WebSocket close metadata.
+   * @returns A promise settled after diagnostic persistence.
+   */
   private async handleSocketClose(
     account: AccountRecord,
     connection: PddRuntimeConnection,
     event?: { code?: number; reason?: string },
   ): Promise<void> {
-    this.clearConnectionTimers(connection);
-    if (connection.stopped) {
+    if (!this.isLiveConnection(connection)) {
       connection.state = "stopped";
       return;
     }
+    this.clearConnectionTimers(connection);
     connection.state = "error";
-    const reason = `${event?.code ?? "unknown"}:${event?.reason ?? "websocket_closed"}`;
+    const reason = sanitizeServiceError(`${event?.code ?? "unknown"}:${event?.reason ?? "websocket_closed"}`);
     connection.lastError = reason;
     connection.failureCategory = "network";
     if (typeof event?.code === "number" && [4001, 4003, 4004, 4010].includes(event.code)) {
@@ -523,7 +834,17 @@ export class PddService {
     this.scheduleReconnect(account, connection);
   }
 
+  /**
+   * Records a live socket error and schedules its reconnect.
+   *
+   * @param account Account owning the socket.
+   * @param connection Connection that emitted the error.
+   * @returns A promise settled after logging.
+   */
   private async handleSocketError(account: AccountRecord, connection: PddRuntimeConnection): Promise<void> {
+    if (!this.isLiveConnection(connection)) {
+      return;
+    }
     connection.state = "error";
     connection.lastError = "websocket_error";
     connection.failureCategory = "network";
@@ -533,8 +854,28 @@ export class PddService {
     }
   }
 
+  /**
+   * Schedules at most the configured number of reconnect generations.
+   *
+   * @param account Account to reconnect.
+   * @param connection Failed connection carrying retry state.
+   */
   private scheduleReconnect(account: AccountRecord, connection: PddRuntimeConnection): void {
-    if (connection.stopped) {
+    if (!this.isLiveConnection(connection)) {
+      return;
+    }
+    if (connection.reconnectCount >= PddService.RECONNECT_MAX_ATTEMPTS) {
+      connection.state = "error";
+      connection.lastError = "reconnect_retries_exhausted";
+      connection.failureCategory = "network";
+      this.trackBackground(Promise.all([
+        this.options.saveAccount?.(withoutRuntimeAccountFields({
+          ...account,
+          status: "error",
+          error: connection.lastError,
+        })) ?? Promise.resolve(),
+        this.log("error", `拼多多 WebSocket 重连已停止：${account.username}`),
+      ]).then(() => undefined));
       return;
     }
     if (connection.reconnectCooldownUntil && connection.reconnectCooldownUntil > Date.now()) {
@@ -554,19 +895,29 @@ export class PddService {
     const delay = this.computeReconnectDelay(connection.reconnectCount + 1);
     connection.reconnectCooldownUntil = Date.now() + delay + PddService.RECONNECT_COOLDOWN_MS;
     connection.reconnectTimer = setTimeout(() => {
-      void this.startConnection(account, true).catch(async (error) => {
-        const message = error instanceof Error ? error.message : String(error);
+      connection.reconnectTimer = undefined;
+      this.trackBackground(this.startConnection(account, true, connection.generation).catch(async (error) => {
+        if (!this.isCurrentGeneration(account.id, connection.generation)) {
+          return;
+        }
+        const message = sanitizeServiceError(error);
         connection.lastError = message;
         connection.state = "error";
         await this.options.saveAccount?.(withoutRuntimeAccountFields({ ...account, status: "error", error: message }));
-      });
+      }));
     }, delay);
   }
 
+  /**
+   * Starts the heartbeat watchdog for one live connection.
+   *
+   * @param account Account owning the connection.
+   * @param connection Live connection to monitor.
+   */
   private scheduleHeartbeatProbe(account: AccountRecord, connection: PddRuntimeConnection): void {
     this.clearHeartbeatTimer(connection);
     connection.heartbeatTimer = setInterval(() => {
-      if (connection.stopped) {
+      if (!this.isLiveConnection(connection)) {
         return;
       }
       if (!connection.lastHeartbeatAt) {
@@ -579,7 +930,7 @@ export class PddService {
         return;
       }
       if (elapsed > PddService.HEARTBEAT_MISS_TIMEOUT_MS) {
-        void this.handleSocketClose(account, connection);
+        this.trackBackground(this.handleSocketClose(account, connection));
       }
     }, PddService.HEARTBEAT_INTERVAL_MS);
   }
@@ -611,7 +962,7 @@ export class PddService {
       runtimeState.lastHeartbeatAt = connection.lastHeartbeatAt;
     }
     if (connection.lastError !== undefined) {
-      runtimeState.lastError = connection.lastError;
+      runtimeState.lastError = sanitizeServiceError(connection.lastError);
     }
     if (connection.failureCategory !== undefined) {
       runtimeState.failureCategory = connection.failureCategory;
@@ -657,18 +1008,24 @@ export class PddService {
     if (!account) {
       return { ok: false, error: "找不到消息对应的账号。" };
     }
-    const result = await this.createApi(account.cookies).sendText(message.buyerId, text);
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await this.createApi(account.cookies).sendText(message.buyerId, text);
+    } catch (error) {
+      result = { ok: false, error: sanitizeServiceError(error) };
+    }
     if (!result.ok) {
-      await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "failed", ...(result.error ? { error: result.error } : {}) }));
+      const error = sanitizeServiceError(result.error ?? "未知错误");
+      await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "failed", error }));
       await this.logDiagnostic("pdd", "send_message_failure", {
         accountId: account.id,
         shopId: account.shopId,
         messageId,
         buyerId: message.buyerId,
-        error: result.error ?? "未知错误",
+        error,
       });
-      await this.log("error", `拼多多消息发送失败：${result.error ?? "未知错误"}`);
-      return result;
+      await this.log("error", `拼多多消息发送失败：${error}`);
+      return { ok: false, error };
     }
     await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "sent", replyText: text }));
     return { ok: true };
@@ -683,18 +1040,24 @@ export class PddService {
     if (!account) {
       return { ok: false, error: "找不到消息对应的账号。" };
     }
-    const result = await this.createApi(account.cookies).sendImage(message.buyerId, imageUrl);
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await this.createApi(account.cookies).sendImage(message.buyerId, imageUrl);
+    } catch (error) {
+      result = { ok: false, error: sanitizeServiceError(error) };
+    }
     if (!result.ok) {
-      await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "failed", ...(result.error ? { error: result.error } : {}) }));
+      const error = sanitizeServiceError(result.error ?? "未知错误");
+      await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "failed", error }));
       await this.logDiagnostic("pdd", "send_message_failure", {
         accountId: account.id,
         shopId: account.shopId,
         messageId,
         buyerId: message.buyerId,
-        error: result.error ?? "未知错误",
+        error,
       });
-      await this.log("error", `拼多多图片发送失败：${result.error ?? "未知错误"}`);
-      return result;
+      await this.log("error", `拼多多图片发送失败：${error}`);
+      return { ok: false, error };
     }
     await this.options.saveMessage?.(withoutMessageRuntimeFields({ ...message, state: "sent", replyText: `[image] ${imageUrl}` }));
     return { ok: true };
@@ -876,6 +1239,12 @@ export class PddService {
   }
 }
 
+/**
+ * Loads Playwright lazily so non-browser PDD operations do not pay startup cost.
+ *
+ * @returns The Playwright module.
+ * @throws If Playwright is unavailable.
+ */
 async function loadPlaywright(): Promise<PlaywrightModule> {
   try {
     const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
@@ -886,8 +1255,9 @@ async function loadPlaywright(): Promise<PlaywrightModule> {
 }
 
 export function classifyConnectionError(error: unknown, context: FailureContext): ConnectionFailure {
-  const message = error instanceof Error ? error.message : String(error);
-  const lower = message.toLowerCase();
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = sanitizeServiceError(rawMessage);
+  const lower = rawMessage.toLowerCase();
   const contains = (value: string): boolean => lower.includes(value);
 
   if (contains("会话") && (contains("过期") || contains("失效") || contains("43001") || contains("1001"))) {
@@ -996,8 +1366,100 @@ async function waitForLoginCompletion(page: PlaywrightPage, timeoutMs: number): 
   throw new Error("login timeout");
 }
 
-function safePathSegment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+/**
+ * Resolves a collision-resistant direct child profile and migrates safe legacy names.
+ *
+ * @param dataDir Application data directory.
+ * @param username PDD username that owns the profile.
+ * @returns A contained profile directory unique to ambiguous usernames.
+ * @throws If legacy migration fails or the resolved path is unsafe.
+ */
+export async function resolvePddProfileDir(dataDir: string, username: string): Promise<string> {
+  const profileRoot = path.resolve(dataDir, "pdd-profiles");
+  const profileDir = path.join(profileRoot, profileSegment(username));
+  assertContainedProfilePath(profileRoot, profileDir);
+  if (await pathExists(profileDir)) {
+    return profileDir;
+  }
+
+  const legacySegment = username.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const legacyDir = path.resolve(profileRoot, legacySegment);
+  if (legacySegment !== "." && legacySegment !== ".." && path.dirname(legacyDir) === profileRoot && await pathExists(legacyDir)) {
+    await mkdir(profileRoot, { recursive: true });
+    try {
+      await rename(legacyDir, profileDir);
+    } catch (error) {
+      if (!await pathExists(profileDir)) {
+        throw error;
+      }
+    }
+  }
+  return profileDir;
+}
+
+/**
+ * Hashes every username so case-insensitive filesystems cannot merge accounts.
+ *
+ * @param username PDD username.
+ * @returns A direct-child-safe, collision-resistant directory segment.
+ */
+function profileSegment(username: string): string {
+  return `user-${createHash("sha256").update(username).digest("hex")}`;
+}
+
+/**
+ * Rejects root, sibling, and ancestor paths before recursive deletion.
+ *
+ * @param profileRoot Allowed profile root.
+ * @param profileDir Candidate child directory.
+ * @throws If the candidate is not a child of the profile root.
+ */
+function assertContainedProfilePath(profileRoot: string, profileDir: string): void {
+  const relative = path.relative(profileRoot, profileDir);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("拒绝删除 PDD profile 根目录或其外部路径。");
+  }
+}
+
+/**
+ * Checks whether a path exists without treating absence as an exceptional state.
+ *
+ * @param value Filesystem path to inspect.
+ * @returns Whether the path exists.
+ */
+async function pathExists(value: string): Promise<boolean> {
+  try {
+    await access(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Closes a browser context while tolerating a concurrent dispose call.
+ *
+ * @param context Tracked Playwright context.
+ * @param timeoutMs Maximum time allowed for the context close handshake.
+ * @returns A promise settled after the close attempt or its deadline.
+ */
+async function closeBrowserContext(
+  context: PlaywrightBrowserContext,
+  timeoutMs = DEFAULT_BROWSER_CLOSE_TIMEOUT_MS,
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(finish, Math.max(0, timeoutMs));
+    context.close().then(finish, finish);
+  });
 }
 
 function isLoginUrl(value: string): boolean {
@@ -1008,11 +1470,18 @@ function isLoginUrl(value: string): boolean {
   }
 }
 
+/** Redacts and bounds one value before it reaches persistence or an external caller. */
 function sanitizeContextValue(value: string): string {
   return redactSensitiveText(value)
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .slice(0, 300);
+}
+
+/** Converts an unknown failure into a redacted, bounded service-boundary message. */
+function sanitizeServiceError(error: unknown): string {
+  const value = error instanceof Error ? error.message : String(error);
+  return sanitizeContextValue(value) || "未知错误";
 }
 
 function isHeartbeatMessage(payload: Record<string, unknown>): boolean {

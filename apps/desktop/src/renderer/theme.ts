@@ -105,6 +105,14 @@ export const themeCssVariables = {
   "@media (prefers-color-scheme: dark)": {
     ":root": Object.fromEntries(Object.entries(palettes.dark).map(([k, val]) => [VAR[k] ?? k, val])),
   },
+  // Shared motion primitives, mirroring the design's .spin / .fade-in keyframes.
+  "@keyframes ca-spin": { to: { transform: "rotate(360deg)" } },
+  "@keyframes ca-fade-in": {
+    from: { opacity: 0, transform: "translateY(-4px)" },
+    to: { opacity: 1, transform: "translateY(0)" },
+  },
+  ".ca-spin": { display: "inline-flex", animation: "ca-spin 1s linear infinite" },
+  ".ca-fade-in": { animation: "ca-fade-in .22s ease" },
 };
 
 // Manrope (self-hosted, see fonts/fonts.css) for UI/body, matching the design

@@ -17,7 +17,7 @@ export const AgentAuditViewer: React.FC = () => {
   const filterInput = {
     height: 34,
     px: "12px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${tokens.color.border.strong}`,
     borderRadius: "9px",
     fontSize: 12,
     fontWeight: 500,
@@ -70,19 +70,19 @@ export const AgentAuditViewer: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 p: "12px 2px",
-                borderBottom: index === records.length - 1 ? "none" : "1px solid #f0f0f0",
+                borderBottom: index === records.length - 1 ? "none" : `1px solid ${tokens.color.border.hairline}`,
               }}
             >
-              <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: "#c2c2c2" }}>
+              <Typography sx={{ width: 64, fontFamily: tokens.font.display, fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary }}>
                 {new Date(record.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </Typography>
-              <Typography noWrap sx={{ width: 110, fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: "#525252", pr: 1 }}>
+              <Typography noWrap sx={{ width: 110, fontFamily: tokens.font.display, fontSize: 12, fontWeight: 500, color: tokens.color.text.secondary, pr: 1 }}>
                 {record.messageId}
               </Typography>
               <Typography sx={{ width: 90, fontSize: 11, fontWeight: 600 }}>{eventLabel(record.eventType)}</Typography>
               <Typography
                 noWrap
-                sx={{ width: 150, fontSize: 12, fontWeight: 500, color: record.toolName ? "#525252" : tokens.color.text.tertiary, pr: 1 }}
+                sx={{ width: 150, fontSize: 12, fontWeight: 500, color: record.toolName ? tokens.color.text.secondary : tokens.color.text.tertiary, pr: 1 }}
               >
                 {record.toolName ?? "—"}
               </Typography>

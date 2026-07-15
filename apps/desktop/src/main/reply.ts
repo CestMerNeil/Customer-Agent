@@ -73,6 +73,13 @@ export type InboundHandlerChainOutcome =
   | { ok: true; handler: "immediate_system" | "keyword_handoff" | "intent_handoff" | "ai_agent"; action: "ignored" | "escalated" | "send"; reply?: GeneratedReply }
   | { ok: false; handler: "fallback"; error: string };
 
+/** Runs one inbound message through system, handoff, Agent, and real-send stages.
+ *
+ * @param request - The persisted inbound message to process.
+ * @param deps - Store and real external operations used by the handler chain.
+ * @returns The handler and action that completed, or a recoverable failure.
+ * @throws When the configured real PDD send operation rejects or reports failure.
+ */
 export async function runInboundHandlerChain(
   request: { context: MessageRecord },
   deps: InboundHandlerChainDeps,
@@ -104,7 +111,10 @@ export async function runInboundHandlerChain(
   if (!result.ok) {
     return { ok: false, handler: "fallback", error: result.error };
   }
-  await deps.sendReply?.(request.context, result.reply.text);
+  if (deps.sendReply) {
+    await deps.sendReply(request.context, result.reply.text);
+    await recordPddSendSuccess(request.context, deps.store);
+  }
   return { ok: true, handler: "ai_agent", action: "send", reply: result.reply };
 }
 
@@ -115,13 +125,14 @@ export async function generateAndPersistReply(
   request: GenerateReplyRequest,
   deps: GenerateReplyDeps,
 ): Promise<GenerateReplyOutcome> {
+  let auditQueue = Promise.resolve();
   try {
     const settings = await deps.store.getSettings();
     const client = await deps.createInferenceClient();
     const memory = await deps.store.getConversationMemory(memoryKey(request.context));
     const tools = createCustomerAgentTools(request.context, deps, settings.knowledge.topK);
     const onEvent = (event: ToolWorkflowEvent) => {
-      void persistAgentAuditEvent(request.context, event, deps.store);
+      auditQueue = auditQueue.then(() => persistAgentAuditEvent(request.context, event, deps.store));
     };
     const workflow = new ResponsesAgentWorkflow({
       invokeModel: (modelRequest) => client.respond(modelRequest),
@@ -129,9 +140,11 @@ export async function generateAndPersistReply(
       onEvent,
     });
     const reply = await workflow.generate({ ...request, ...(memory?.summary ? { memorySummary: memory.summary } : {}) });
+    await auditQueue;
     await updateConversationMemory(request.context, reply, memory, client, deps.store);
     return { ok: true, reply };
   } catch (error) {
+    await auditQueue;
     const message = error instanceof Error ? error.message : String(error);
     await appendDiagnostic(deps.store, "inference", "reply_generation_failure", {
       accountId: request.context.accountId,
@@ -228,18 +241,48 @@ async function persistAgentAuditEvent(
   }
 }
 
-function summarizeAuditEvent(event: ToolWorkflowEvent): string {
-  if (event.type === "tool_call") {
-    return truncateAuditText(`tool_call input=${JSON.stringify(event.input ?? {})}`);
+/** Persists proof only after the governed PDD text-send call has succeeded.
+ *
+ * @param context - The real inbound message whose reply was delivered.
+ * @param store - The local audit and diagnostic store used by evidence export.
+ * @returns A promise that resolves after persistence or a safe diagnostic fallback.
+ */
+export async function recordPddSendSuccess(
+  context: GenerateReplyRequest["context"],
+  store: Pick<SqliteAppStore, "appendAgentAudit" | "appendLog">,
+): Promise<void> {
+  try {
+    await store.appendAgentAudit({
+      shopId: context.shopId,
+      accountId: context.accountId,
+      buyerId: context.buyerId,
+      messageId: context.id,
+      eventType: "pdd_send_success",
+      ok: true,
+      summary: "Governed PDD text reply completed successfully.",
+      citations: [],
+    });
+  } catch (error) {
+    await appendDiagnostic(store, "pdd", "send_success_audit_persist_failure", {
+      accountId: context.accountId,
+      shopId: context.shopId,
+      messageId: context.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
-  if (event.type === "tool_result") {
-    return truncateAuditText(`tool_result ok=${event.result?.ok} content=${event.result?.content ?? ""} error=${event.result?.error ?? ""}`);
-  }
-  return truncateAuditText(event.content ?? event.type);
 }
 
-function truncateAuditText(value: string): string {
-  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, 500);
+function summarizeAuditEvent(event: ToolWorkflowEvent): string {
+  if (event.type === "tool_call") {
+    return `tool_call input_keys=${Object.keys(event.input ?? {}).sort().join(",") || "none"}`;
+  }
+  if (event.type === "tool_result") {
+    return `tool_result ok=${event.result?.ok === true} citations=${event.result?.citations?.length ?? 0} error=${Boolean(event.result?.error)}`;
+  }
+  if (event.type === "final") {
+    return `final response completed citations=${event.result?.citations?.length ?? 0}`;
+  }
+  return event.type;
 }
 
 async function updateConversationMemory(
@@ -348,17 +391,45 @@ function createCustomerAgentTools(
       },
     },
     {
-      name: "search_customer_service_knowledge",
-      description: "搜索当前店铺已审核客服知识。输入：query。",
+      name: "list_customer_service_knowledge",
+      description: "列出当前店铺已审核且可用的客服知识目录。只返回 ID、标题、标签和版本，供你自行判断相关性；输入可包含 page。",
       execute: async (input) => {
-        const query = stringInput(input.query) ?? context.content;
         const records = await deps.store.listGovernedKnowledge({ kind: "customer_service", shopId: context.shopId, eligibleOnly: true });
-        const results = searchEligibleGovernedKnowledge(records, query, topK);
+        const pageSize = 50;
+        const page = positiveInt(input.page) ?? 1;
+        const ordered = records.slice().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.citationId.localeCompare(right.citationId));
+        const pageRecords = ordered.slice((page - 1) * pageSize, page * pageSize);
+        const totalPages = Math.max(1, Math.ceil(ordered.length / pageSize));
         return {
-          ok: results.length > 0,
-          content: results.length ? results.map((result) => result.content).join("\n\n") : "未找到可用客服知识。",
-          citations: results.map(toCitation),
-          ...(results.length ? {} : { error: "customer_service_knowledge_not_found" }),
+          ok: true,
+          content: pageRecords.length
+            ? [
+              `客服知识目录：第 ${page}/${totalPages} 页，共 ${ordered.length} 条。`,
+              ...pageRecords.map((record) => `- citation_id=${record.citationId} | title=${record.title} | tags=${record.tags.join("、") || "无"} | version=v${record.version}`),
+              page < totalPages ? `还有下一页，请调用 page=${page + 1}。` : "已到最后一页。",
+            ].join("\n")
+            : "当前页没有可用客服知识。",
+        };
+      },
+    },
+    {
+      name: "get_customer_service_knowledge",
+      description: "按你从目录中选择的精确 citation_ids 获取当前店铺客服知识全文。只有调用此工具取得全文后，才能据此回答。",
+      execute: async (input) => {
+        const citationIds = stringArrayInput(input.citation_ids ?? input.citationIds).slice(0, 10);
+        if (citationIds.length === 0) {
+          return { ok: false, content: "", error: "缺少 citation_ids" };
+        }
+        const records = await deps.store.listGovernedKnowledge({ kind: "customer_service", shopId: context.shopId, eligibleOnly: true });
+        const byId = new Map(records.map((record) => [record.citationId, record]));
+        const selected = citationIds.map((id) => byId.get(id)).filter((record): record is GovernedKnowledgeRecord => Boolean(record));
+        return {
+          ok: selected.length > 0,
+          content: selected.length
+            ? selected.map((record) => `客服知识: ${record.citationId} (v${record.version})\n标题: ${record.title}\n${record.content}`).join("\n\n")
+            : "未找到当前店铺可用的对应客服知识。",
+          citations: selected.map(toGovernedKnowledgeCitation),
+          ...(selected.length ? {} : { error: "customer_service_knowledge_not_found_or_ineligible" }),
         };
       },
     },
@@ -449,6 +520,24 @@ function stringInput(value: unknown): string | undefined {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() || undefined : undefined;
 }
 
+function positiveInt(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function stringArrayInput(value: unknown): string[] {
+  return Array.isArray(value) ? Array.from(new Set(value.map(stringInput).filter((item): item is string => Boolean(item)))) : [];
+}
+
+function toGovernedKnowledgeCitation(record: GovernedKnowledgeRecord): KnowledgeSourceReference {
+  return {
+    scope: "shop",
+    documentId: record.citationId,
+    chunkId: `v${record.version}`,
+    score: 1,
+  };
+}
+
 function isAiEligibleMessageType(type: MessageRecord["type"]): boolean {
   return ["text", "image", "video", "emotion", "goods_card", "goods_inquiry", "goods_spec", "order_info"].includes(type);
 }
@@ -461,7 +550,7 @@ function matchHandoffKeyword(content: string, keywords: string[], shopId: string
 }
 
 function effectiveHandoffKeywords(settings: AppSettings): string[] {
-  return settings.handoff?.keywords?.length ? settings.handoff.keywords : DEFAULT_HANDOFF_KEYWORDS;
+  return settings.handoff ? settings.handoff.keywords : DEFAULT_HANDOFF_KEYWORDS;
 }
 
 function matchIntentRule(

@@ -15,11 +15,8 @@
     "test": "vitest run --passWithNoTests",
     "lint": "eslint ."
   },
-  "dependencies": {
-    "@customer-agent/core": "workspace:*",
-    "@lancedb/lancedb": "^0.22.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

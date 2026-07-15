@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
+import { redactSensitiveText } from "@customer-agent/core";
 import type {
   AccountRecord,
   AgentAuditRecord,
@@ -9,6 +10,7 @@ import type {
   GovernedKnowledgeKind,
   GovernedKnowledgeRecord,
   GovernedKnowledgeReviewState,
+  GovernedKnowledgeSourceType,
   InboundQueueMetrics,
   InboundQueueRecord,
   LogLevel,
@@ -35,7 +37,7 @@ const DEFAULT_HANDOFF_KEYWORDS = [
   "开票",
   "备注",
 ];
-import { SecretBox } from "./secret-box.js";
+import { SecretBox, type SecretBoxOptions } from "./secret-box.js";
 
 type NewAccount = Omit<AccountRecord, "id" | "createdAt" | "updatedAt"> & { id?: string };
 type NewMessage = Omit<MessageRecord, "updatedAt">;
@@ -53,6 +55,10 @@ type NewAgentAuditRecord = Omit<AgentAuditRecord, "id" | "createdAt"> & { id?: s
 const DEFAULT_QUEUE_MAX_CONCURRENT_CONVERSATIONS = 2;
 const DEFAULT_QUEUE_MAX_ATTEMPTS = 3;
 const DEFAULT_QUEUE_BASE_BACKOFF_MS = 5_000;
+/** Maximum number of diagnostic log rows retained in the local database. */
+const LOG_RETENTION_LIMIT = 5_000;
+/** Delay used to batch diagnostic-only writes into one database export. */
+const LOG_PERSIST_DELAY_MS = 100;
 const defaultSettings: AppSettings = {
   modelProvider: "local",
   businessHours: { start: "08:00", end: "23:00" },
@@ -66,26 +72,39 @@ const defaultSettings: AppSettings = {
   handoff: { keywords: DEFAULT_HANDOFF_KEYWORDS, intentRules: [] },
 };
 
+/** Persists Customer Agent state in one encrypted-at-rest SQL.js database file. */
 export class SqliteAppStore {
+  private dirty = false;
+  private delayedPersistence: ReturnType<typeof setTimeout> | undefined;
+  private persistence: Promise<void> | undefined;
+  private persistenceError: unknown;
+
   private constructor(
     private readonly dbPath: string,
     private readonly db: Database,
     private readonly secrets: SecretBox,
   ) {}
 
-  static async open(dataDir: string): Promise<SqliteAppStore> {
+  /** Opens the persisted store with the supplied secret-key protection policy. */
+  static async open(dataDir: string, secretBoxOptions: SecretBoxOptions = {}): Promise<SqliteAppStore> {
     await mkdir(dataDir, { recursive: true });
     const SQL = await initSqlJs();
     const dbPath = path.join(dataDir, "customer-agent.sqlite");
     const db = await openDatabase(SQL, dbPath);
-    const store = new SqliteAppStore(dbPath, db, await SecretBox.open(dataDir));
-    store.migrate();
-    await store.persist();
-    return store;
+    try {
+      const store = new SqliteAppStore(dbPath, db, await SecretBox.open(dataDir, secretBoxOptions));
+      store.migrate();
+      await store.persist();
+      return store;
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
 
+  /** Flushes pending persistence work before releasing the in-memory database. */
   async close(): Promise<void> {
-    await this.persist();
+    await this.flush();
     this.db.close();
   }
 
@@ -94,6 +113,7 @@ export class SqliteAppStore {
     const existing = input.id ? await this.getAccount(input.id) : await this.findAccount(input.channel, input.shopId, input.userId);
     const account: AccountRecord = {
       ...input,
+      ...(input.error === undefined ? {} : { error: redactSensitiveText(input.error) }),
       id: existing?.id ?? input.id ?? crypto.randomUUID(),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -140,8 +160,9 @@ export class SqliteAppStore {
     )[0];
   }
 
+  /** Stores a message without retaining raw channel payloads. */
   async upsertMessage(input: NewMessage): Promise<MessageRecord> {
-    const message = { ...input, updatedAt: new Date().toISOString() };
+    const message = sanitizeMessagePayload({ ...input, updatedAt: new Date().toISOString() });
     this.db.run(
       `INSERT INTO messages(id, payload, shop_id, account_id, state, received_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -347,7 +368,7 @@ export class SqliteAppStore {
     const next = this.updateInboundQueuePayload({
       ...item,
       state,
-      ...(lastError ? { lastError } : {}),
+      ...(lastError ? { lastError: redactSensitiveText(lastError) } : {}),
       updatedAt: now,
     });
     await this.persist();
@@ -373,7 +394,7 @@ export class SqliteAppStore {
       ...item,
       state,
       availableAt,
-      lastError: options.error,
+      lastError: redactSensitiveText(options.error),
       updatedAt: now,
     });
     await this.persist();
@@ -657,6 +678,10 @@ export class SqliteAppStore {
     shopId: string;
     rows: Array<{ title: string; content: string; tags?: string[] }>;
     reviewState?: GovernedKnowledgeReviewState;
+    enabled?: boolean;
+    sourceType?: GovernedKnowledgeSourceType;
+    sourceId?: string;
+    sourceMetadata?: Record<string, unknown>;
   }): Promise<{ created: number; skippedDuplicates: number; failed: number }> {
     let created = 0;
     let skippedDuplicates = 0;
@@ -688,8 +713,10 @@ export class SqliteAppStore {
         title,
         content,
         tags: row.tags ?? [],
-        sourceType: "import",
-        enabled: true,
+        sourceType: input.sourceType ?? "import",
+        ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+        ...(input.sourceMetadata ? { sourceMetadata: input.sourceMetadata } : {}),
+        enabled: input.enabled ?? true,
         reviewState: input.reviewState ?? "draft",
       });
       created += 1;
@@ -732,7 +759,7 @@ export class SqliteAppStore {
         keywords: settings.handoff?.keywords ?? current.handoff?.keywords ?? [],
         intentRules: settings.handoff?.intentRules ?? current.handoff?.intentRules ?? [],
       },
-      ...(settings.inferenceRuntime ? { inferenceRuntime: { ...current.inferenceRuntime, ...settings.inferenceRuntime } } : {}),
+      ...(settings.inferenceRuntime ? { inferenceRuntime: settings.inferenceRuntime } : {}),
     };
     const storedNext = this.settingsToStorage(next);
     this.db.run(
@@ -743,10 +770,12 @@ export class SqliteAppStore {
     return next;
   }
 
+  /** Appends a diagnostic record while keeping the log table bounded. */
   async appendLog(level: LogLevel, message: string): Promise<LogRecord> {
-    const log = { id: crypto.randomUUID(), level, message, createdAt: new Date().toISOString() };
+    const log = { id: crypto.randomUUID(), level, message: redactSensitiveText(message), createdAt: new Date().toISOString() };
     this.db.run("INSERT INTO logs(id, level, message, created_at) VALUES (?, ?, ?, ?)", [log.id, log.level, log.message, log.createdAt]);
-    await this.persist();
+    this.pruneLogs();
+    this.deferPersist();
     return log;
   }
 
@@ -760,6 +789,7 @@ export class SqliteAppStore {
     );
   }
 
+  /** Creates the schema, sanitizes legacy messages, and recovers interrupted queue work. */
   private migrate(): void {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS accounts (
@@ -818,10 +848,129 @@ export class SqliteAppStore {
         created_at TEXT NOT NULL
       );
     `);
+    this.sanitizeStoredMessages();
+    this.sanitizeStoredLogs();
+    this.recoverInterruptedInboundQueueItems();
+    this.pruneLogs();
   }
 
-  private async persist(): Promise<void> {
-    await writeFile(this.dbPath, Buffer.from(this.db.export()));
+  /** Requeues crash-interrupted work without consuming another delivery attempt. */
+  private recoverInterruptedInboundQueueItems(): void {
+    const interrupted = this.query<InboundQueueRecord>(
+      "SELECT payload FROM inbound_queue WHERE state = 'processing'",
+      [],
+      (row) => JSON.parse(String(row.payload)) as InboundQueueRecord,
+    );
+    const now = new Date().toISOString();
+    for (const item of interrupted) {
+      this.updateInboundQueuePayload({
+        ...item,
+        state: "retry_waiting",
+        availableAt: now,
+        updatedAt: now,
+        lastError: "interrupted_by_previous_shutdown",
+      });
+    }
+  }
+
+  /** Keeps only the newest bounded diagnostic rows. */
+  private pruneLogs(): void {
+    this.db.run(
+      "DELETE FROM logs WHERE rowid < (SELECT rowid FROM logs ORDER BY rowid DESC LIMIT 1 OFFSET ?)",
+      [LOG_RETENTION_LIMIT - 1],
+    );
+  }
+
+  /** Rewrites only legacy message rows that still contain raw channel data. */
+  private sanitizeStoredMessages(): void {
+    const rows = this.query<{ id: string; payload: string }>(
+      "SELECT id, payload FROM messages",
+      [],
+      (row) => ({ id: String(row.id), payload: String(row.payload) }),
+    );
+    for (const row of rows) {
+      const stored = JSON.parse(row.payload) as MessageRecord;
+      if ("raw" in stored || (stored.goods && "raw" in stored.goods) || (stored.order && "raw" in stored.order)) {
+        this.db.run("UPDATE messages SET payload = ? WHERE id = ?", [JSON.stringify(sanitizeMessagePayload(stored)), row.id]);
+      }
+    }
+  }
+
+  /** Redacts legacy diagnostic rows before they can be returned to the renderer. */
+  private sanitizeStoredLogs(): void {
+    const rows = this.query<{ id: string; message: string }>(
+      "SELECT id, message FROM logs",
+      [],
+      (row) => ({ id: String(row.id), message: String(row.message) }),
+    );
+    for (const row of rows) {
+      const sanitized = redactSensitiveText(row.message);
+      if (sanitized !== row.message) {
+        this.db.run("UPDATE logs SET message = ? WHERE id = ?", [sanitized, row.id]);
+      }
+    }
+  }
+
+  /** Marks the current database snapshot dirty and joins the shared writer. */
+  private persist(): Promise<void> {
+    this.dirty = true;
+    return this.flush();
+  }
+
+  /** Marks diagnostic changes dirty and starts one short batching window. */
+  private deferPersist(): void {
+    this.dirty = true;
+    if (!this.delayedPersistence) {
+      this.delayedPersistence = setTimeout(() => {
+        this.delayedPersistence = undefined;
+        void this.flush().catch((error: unknown) => {
+          this.persistenceError = error;
+        });
+      }, LOG_PERSIST_DELAY_MS);
+    }
+  }
+
+  /** Serializes and coalesces pending snapshots into atomic file replacements. */
+  private async flush(): Promise<void> {
+    if (this.delayedPersistence) {
+      clearTimeout(this.delayedPersistence);
+      this.delayedPersistence = undefined;
+    }
+    while (true) {
+      if (!this.persistence && this.dirty) {
+        this.persistence = this.flushPersistedState();
+      }
+      const current = this.persistence;
+      if (!current) {
+        if (this.persistenceError) {
+          throw this.persistenceError;
+        }
+        return;
+      }
+      try {
+        await current;
+      } finally {
+        if (this.persistence === current) {
+          this.persistence = undefined;
+        }
+      }
+    }
+  }
+
+  /** Writes dirty snapshots until no mutation arrived during the previous write. */
+  private async flushPersistedState(): Promise<void> {
+    await Promise.resolve();
+    while (this.dirty) {
+      this.dirty = false;
+      try {
+        await replaceFileAtomically(this.dbPath, Buffer.from(this.db.export()));
+      } catch (error) {
+        this.dirty = true;
+        this.persistenceError = error;
+        throw error;
+      }
+    }
+    this.persistenceError = undefined;
   }
 
   private findAccount(channel: string, shopId: string, userId: string): Promise<AccountRecord | undefined> {
@@ -955,10 +1104,59 @@ function stableKnowledgeKey(value: string): string {
     || crypto.randomUUID();
 }
 
+/** Removes channel payload copies while preserving normalized message fields. */
+function sanitizeMessagePayload(message: MessageRecord): MessageRecord {
+  const { raw: _raw, goods, order, ...sanitized } = message;
+  const { raw: _goodsRaw, ...sanitizedGoods } = goods ?? {};
+  const { raw: _orderRaw, ...sanitizedOrder } = order ?? {};
+  return {
+    ...sanitized,
+    ...(goods ? { goods: sanitizedGoods } : {}),
+    ...(order ? { order: sanitizedOrder } : {}),
+  };
+}
+
+/** Opens an existing valid database or creates a new one only when no file exists. */
 async function openDatabase(SQL: SqlJsStatic, dbPath: string): Promise<Database> {
+  let bytes: Uint8Array;
   try {
-    return new SQL.Database(await readFile(dbPath));
-  } catch {
-    return new SQL.Database();
+    bytes = await readFile(dbPath);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return new SQL.Database();
+    }
+    throw new Error(`Unable to read database at ${dbPath}; the file was left unchanged.`, { cause: error });
+  }
+
+  try {
+    if (bytes.byteLength === 0) {
+      throw new Error("database file is empty");
+    }
+    const db = new SQL.Database(bytes);
+    const result = db.exec("PRAGMA quick_check");
+    const status = result[0]?.values[0]?.[0];
+    if (status !== "ok") {
+      db.close();
+      throw new Error(`integrity check returned ${String(status)}`);
+    }
+    return db;
+  } catch (error) {
+    throw new Error(`Unable to open database at ${dbPath}; the file was left unchanged.`, { cause: error });
+  }
+}
+
+/** Returns whether a filesystem failure means the target path does not exist. */
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/** Replaces a file atomically using a temporary file in the same directory. */
+async function replaceFileAtomically(filePath: string, data: Uint8Array): Promise<void> {
+  const temporaryPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, data, { mode: 0o600 });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
   }
 }

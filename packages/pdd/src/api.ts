@@ -1,9 +1,9 @@
 import { pddHttpBaseUrl } from "./endpoints.js";
 
 export interface PddHttp {
-  postJson<TResponse = unknown>(url: string, body: unknown, options?: { headers?: Record<string, string> }): Promise<TResponse>;
-  postEmptyJson<TResponse = unknown>(url: string): Promise<TResponse>;
-  postForm<TResponse = unknown>(url: string, body: Record<string, string>): Promise<TResponse>;
+  postJson<TResponse = unknown>(url: string, body: unknown, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<TResponse>;
+  postEmptyJson<TResponse = unknown>(url: string, options?: { signal?: AbortSignal }): Promise<TResponse>;
+  postForm<TResponse = unknown>(url: string, body: Record<string, string>, options?: { signal?: AbortSignal }): Promise<TResponse>;
 }
 
 export interface PddUserInfo {
@@ -233,13 +233,13 @@ export class PddApi {
     return sendResult(response);
   }
 
-  async getProductList(options: { page?: number; pageSize?: number; antiContent?: string } = {}): Promise<PddProductListResult> {
+  async getProductList(options: { page?: number; pageSize?: number; antiContent?: string; signal?: AbortSignal } = {}): Promise<PddProductListResult> {
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 50;
     const response = await this.http.postJson<PddResponse>(
       `${pddHttpBaseUrl()}/latitude/goods/recommendGoods`,
       { uid: "", pageNum: page, pageSize },
-      { headers: productHeaders(options.antiContent) },
+      { headers: productHeaders(options.antiContent), ...(options.signal ? { signal: options.signal } : {}) },
     );
     ensureSuccess(response, "获取商品列表失败");
     const result = asRecord(response.result);
@@ -252,7 +252,7 @@ export class PddApi {
     };
   }
 
-  async getProductDetail(goodsId: string | number, options: { antiContent?: string } = {}): Promise<PddProductDetail> {
+  async getProductDetail(goodsId: string | number, options: { antiContent?: string; signal?: AbortSignal } = {}): Promise<PddProductDetail> {
     const normalizedGoodsId = normalizeGoodsId(goodsId);
     if (!normalizedGoodsId) {
       throw new Error("商品ID不能为空");
@@ -260,7 +260,7 @@ export class PddApi {
     const response = await this.http.postJson<PddResponse>(
       `${pddHttpBaseUrl()}/glide/v2/mms/query/commit/on_shop/detail`,
       { goods_id: normalizedGoodsId },
-      { headers: productHeaders(options.antiContent) },
+      { headers: productHeaders(options.antiContent), ...(options.signal ? { signal: options.signal } : {}) },
     );
     ensureSuccess(response, "获取商品详情失败");
     return parseProductDetail(response.result, normalizedGoodsId);

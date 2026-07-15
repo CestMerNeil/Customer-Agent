@@ -63,6 +63,17 @@ The system SHALL classify and audit WebSocket lifecycle events, heartbeat failur
 - **WHEN** reconnect fails because the session, token, cookie, or account state requires operator action
 - **THEN** the system stops automatic recovery, marks the account as requiring relogin, and surfaces the reason in the UI
 
+### Requirement: Contained PDD resource lifecycle
+The system SHALL keep each persistent browser profile inside the PDD profile root and SHALL cancel stale account starts, reconnects, sockets, timers, and browser contexts.
+
+#### Scenario: Malformed username is used
+- **WHEN** a username contains traversal segments, path separators, Unicode, or characters that collide after sanitization
+- **THEN** the system resolves a collision-resistant direct child profile and recursive logout deletion cannot target the profile root or any ancestor
+
+#### Scenario: Stop races with start or reconnect
+- **WHEN** account stop, replacement start, or app shutdown invalidates in-flight work
+- **THEN** stale work cannot publish a socket and every created socket, timer, and browser context is closed
+
 ### Requirement: Real Pinduoduo acceptance evidence
 The system SHALL require sanitized real acceptance records for all Pinduoduo-dependent behaviors before declaring the capability complete.
 

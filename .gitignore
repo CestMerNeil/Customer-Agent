@@ -8,6 +8,7 @@ release/
 apps/desktop/dist/
 apps/desktop/release/
 apps/desktop/build/playwright-browsers/
+apps/desktop/build/playwright-browsers-win/
 packages/*/dist/
 *.tsbuildinfo
 
@@ -15,6 +16,7 @@ packages/*/dist/
 coverage/
 report/
 .vite/
+.pnpm-store/
 apps/*/node_modules/.vite/
 packages/*/node_modules/.vite/
 

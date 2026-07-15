@@ -15,6 +15,7 @@ export type { BrowserFetchPage, PddBrowserHttpClientOptions } from "./browser-cl
 export { buildCookieHeader, cookieListToJar, parseCookieJar } from "./cookies.js";
 export type { BrowserCookie, CookieJar } from "./cookies.js";
 export { normalizePddMessage } from "./normalizer.js";
+export { withPddBrowserProfileLock } from "./profile-lock.js";
 export {
   buildProductKnowledgeContent,
   buildProductTags,
@@ -32,4 +33,4 @@ export type {
   ProductSyncProgress,
   ProductSyncSaveInput
 } from "./product-sync.js";
-export { PddService } from "./service.js";
+export { PddService, resolvePddProfileDir } from "./service.js";
