@@ -69,12 +69,16 @@ async function runPackagedSmoke() {
 
   const smokeDir = await mkdtemp(path.join(os.tmpdir(), "customer-agent-packaged-smoke-"));
   const readyFile = path.join(smokeDir, "ready.json");
+  const userDataDir = path.join(smokeDir, "user-data");
   try {
-    const child = spawn(executable, [], {
+    const child = spawn(executable, [
+      `--customer-agent-packaged-smoke-ready-file=${readyFile}`,
+      `--customer-agent-packaged-smoke-user-data-dir=${userDataDir}`,
+    ], {
       env: {
         ...process.env,
         CUSTOMER_AGENT_PACKAGED_SMOKE_READY_FILE: readyFile,
-        CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR: path.join(smokeDir, "user-data"),
+        CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR: userDataDir,
       },
       stdio: "inherit",
     });

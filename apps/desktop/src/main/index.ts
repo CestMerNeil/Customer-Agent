@@ -49,7 +49,10 @@ import {
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
-const packagedSmokeUserDataDir = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR;
+const packagedSmokeUserDataPrefix = "--customer-agent-packaged-smoke-user-data-dir=";
+const packagedSmokeReadyPrefix = "--customer-agent-packaged-smoke-ready-file=";
+const packagedSmokeUserDataDir = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_USER_DATA_DIR
+  ?? process.argv.find((argument) => argument.startsWith(packagedSmokeUserDataPrefix))?.slice(packagedSmokeUserDataPrefix.length);
 if (packagedSmokeUserDataDir) {
   app.setPath("userData", packagedSmokeUserDataDir);
 }
@@ -2151,7 +2154,8 @@ async function createWindow() {
 
 /** Emits the packaged-smoke ready signal and requests a clean exit without starting business workers. */
 async function completePackagedSmokeIfRequested(): Promise<boolean> {
-  const readyFile = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_READY_FILE;
+  const readyFile = process.env.CUSTOMER_AGENT_PACKAGED_SMOKE_READY_FILE
+    ?? process.argv.find((argument) => argument.startsWith(packagedSmokeReadyPrefix))?.slice(packagedSmokeReadyPrefix.length);
   if (!readyFile) {
     return false;
   }
