@@ -123,7 +123,7 @@ export class ResponsesAgentWorkflow {
     const finalResult = await this.options.invokeModel({
       instructions: `${instructions}\n\n工具循环已达到上限。请只基于已经返回的工具结果给出最终客服回复；信息不足时建议转人工。`,
       input: Array.isArray(nextInput) ? nextInput : "请给出最终客服回复。",
-      tools,
+      tools: [],
       ...(previousResponseId ? { previousResponseId } : {}),
     });
     const text = finalResult.outputText?.trim() || "您好，当前信息不足，建议转人工继续处理。";

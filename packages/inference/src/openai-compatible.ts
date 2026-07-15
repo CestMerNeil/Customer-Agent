@@ -5,6 +5,7 @@ export interface InferenceConfig {
   chatModel: string;
   temperature?: number;
   maxTokens?: number;
+  enableThinking?: boolean;
   requestTimeoutMs?: number;
 }
 
@@ -199,6 +200,7 @@ export class OpenAICompatibleClient {
           temperature: this.config.temperature ?? 0.3,
           max_tokens: this.config.maxTokens ?? 1000,
           stream: false,
+          ...(this.config.enableThinking === undefined ? {} : { enable_thinking: this.config.enableThinking }),
         }),
         signal,
       });
@@ -259,6 +261,7 @@ export class OpenAICompatibleClient {
           temperature: this.config.temperature ?? 0.3,
           max_tokens: this.config.maxTokens ?? 1000,
           stream: false,
+          ...(this.config.enableThinking === undefined ? {} : { enable_thinking: this.config.enableThinking }),
           ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}),
         }),
         signal,

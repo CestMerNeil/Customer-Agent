@@ -20,7 +20,7 @@ function mockBridge() {
       return { state: "idle", version: "1.0.3", enabled: true };
     }
     if (channel === "app.update.check") {
-      return { state: "checking", version: "1.0.3", enabled: true };
+      return { state: "downloaded", version: "1.0.3", latestVersion: "1.0.4", enabled: true };
     }
     return { ok: true };
   });
@@ -40,6 +40,7 @@ describe("SettingsPage", () => {
 
     // Wait for settings.get to populate business hours before saving.
     await screen.findByDisplayValue("08:00");
+    expect(await screen.findByText("v1.0.3")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /保存设置/ }));
 
     await waitFor(() => {
@@ -58,5 +59,8 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("app.update.check", undefined);
     });
+
+    fireEvent.click(await screen.findByRole("button", { name: /重启安装/ }));
+    expect(invoke).toHaveBeenCalledWith("app.update.install", undefined);
   });
 });

@@ -12,7 +12,6 @@ import { ModelSettings } from "./components/pages/ModelSettings";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { AgentAuditViewer } from "./components/pages/AgentAuditViewer";
 import { QueueOperationsPage } from "./components/pages/QueueOperationsPage";
-import { ReleaseStatusPage } from "./components/pages/ReleaseStatusPage";
 import { HumanHandoffPage } from "./components/pages/HumanHandoffPage";
 
 type ViewState = {
@@ -103,22 +102,12 @@ const views: readonly ViewState[] = [
     render: () => <ModelSettings />,
   },
   {
-    id: "release",
-    label: "发布",
-    title: "发布",
-    icon: "verified",
-    section: "系统",
-    caption: "验收证据与 GitHub Release 门禁",
-    ownHeader: true,
-    render: () => <ReleaseStatusPage />,
-  },
-  {
     id: "settings",
     label: "设置",
     title: "设置",
     icon: "settings",
     section: "系统",
-    caption: "回复策略与本地数据",
+    caption: "回复策略、本地数据与版本更新",
     render: () => <SettingsPage />,
   },
 ];

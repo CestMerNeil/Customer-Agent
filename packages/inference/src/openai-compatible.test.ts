@@ -13,11 +13,13 @@ describe("OpenAICompatibleClient", () => {
         chatModel: "qwen",
         temperature: 0.2,
         maxTokens: 512,
+        enableThinking: false,
       },
       fetchMock,
     );
 
     await expect(client.chat("请回答")).resolves.toBe("有 L 码。");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ enable_thinking: false });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/v1/chat/completions",
       expect.objectContaining({
@@ -38,6 +40,7 @@ describe("OpenAICompatibleClient", () => {
       fetchMock,
     );
     await expect(client.chat("请回答")).resolves.toBe("有 L 码。");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("enable_thinking");
   });
 
   it("falls back to reasoning_content when content is empty", async () => {
@@ -120,6 +123,7 @@ describe("OpenAICompatibleClient", () => {
       {
         baseUrl: "http://localhost:8000/v1",
         chatModel: "gemma-vision",
+        enableThinking: false,
       },
       fetchMock,
     );
@@ -135,6 +139,7 @@ describe("OpenAICompatibleClient", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(body).toMatchObject({
       model: "gemma-vision",
+      enable_thinking: false,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "提取商品知识" },
@@ -169,7 +174,7 @@ describe("OpenAICompatibleClient", () => {
       }),
     });
     const client = new OpenAICompatibleClient(
-      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma" },
+      { baseUrl: "http://localhost:8000/v1", chatModel: "gemma", enableThinking: false },
       fetchMock,
     );
 
@@ -195,6 +200,7 @@ describe("OpenAICompatibleClient", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(body).toMatchObject({
       model: "gemma",
+      enable_thinking: false,
       tool_choice: "auto",
       tools: [{
         type: "function",

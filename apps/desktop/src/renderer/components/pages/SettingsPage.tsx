@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Button, InputBase, Stack, Typography } from "@mui/material";
 import type { AppUpdateStatus } from "@customer-agent/core";
+import { version as appVersion } from "../../../../package.json";
 import { tokens } from "../../theme";
 import { useAsync } from "../useAsync";
 
@@ -20,7 +21,7 @@ export const SettingsPage: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({
     state: "disabled",
-    version: (import.meta as { env?: Record<string, string> }).env?.VITE_APP_VERSION ?? "0.0.0",
+    version: appVersion,
     enabled: false,
   });
   const logs = useAsync(() => window.customerAgent.invoke("log.list", { limit: 100 }), []);
@@ -168,7 +169,7 @@ export const SettingsPage: React.FC = () => {
           <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
             当前版本{" "}
             <Box component="span" sx={{ fontFamily: tokens.font.display, fontWeight: 600 }}>
-              v{(import.meta as { env?: Record<string, string> }).env?.VITE_APP_VERSION ?? "0.0.0"}
+              v{updateStatus.version}
             </Box>
           </Typography>
           <Typography sx={{ fontSize: 11, fontWeight: 500, color: tokens.color.text.tertiary, mt: "2px" }}>

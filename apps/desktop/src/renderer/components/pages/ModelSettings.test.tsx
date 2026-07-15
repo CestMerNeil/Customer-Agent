@@ -78,7 +78,8 @@ describe("ModelSettings", () => {
           config: {
             baseUrl: "https://api.openai.com/v1",
             hasApiKey: true,
-            chatModel: "gpt-4.1-mini",
+            chatModel: "qwen3.6-flash",
+            enableThinking: false,
           },
         };
       }
@@ -119,16 +120,22 @@ describe("ModelSettings", () => {
 
     expect(await screen.findByRole("button", { name: "云端 AI" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
-    expect(screen.getByDisplayValue("gpt-4.1-mini")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("qwen3.6-flash")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("已保存；留空将保持不变")).toHaveValue("");
     expect(screen.queryByDisplayValue("sk-test")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /测试连接/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "启用深度思考" })).not.toBeChecked();
     expect(screen.getByText("服务地址")).toBeInTheDocument();
     expect(screen.queryByText("模型档案")).not.toBeInTheDocument();
     expect(screen.queryByText("应用托管 llama-server")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "检查" })).not.toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalledWith("inference.local.profiles", undefined);
     expect(invoke).not.toHaveBeenCalledWith("inference.runtime.status", undefined);
+    fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("inference.config.save", expect.objectContaining({
+      chatModel: "qwen3.6-flash",
+      enableThinking: false,
+    })));
   });
 
   it("renders only local model controls in local mode", async () => {

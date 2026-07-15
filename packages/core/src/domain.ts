@@ -157,6 +157,7 @@ export interface InferenceConfig {
   chatModel: string;
   temperature?: number;
   maxTokens?: number;
+  enableThinking?: boolean;
 }
 
 /** Inference settings safe to expose without returning the persisted API key. */

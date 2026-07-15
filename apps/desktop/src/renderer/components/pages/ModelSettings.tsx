@@ -79,6 +79,7 @@ export const ModelSettings: React.FC = () => {
   const [hasSavedApiKey, setHasSavedApiKey] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [chatModel, setChatModel] = useState("ggml-org/gemma-3n-E2B-it-GGUF:Q8_0");
+  const [enableThinking, setEnableThinking] = useState(true);
   const [health, setHealth] = useState<{ ok: boolean; error?: string } | null>(null);
   const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -108,6 +109,7 @@ export const ModelSettings: React.FC = () => {
     totalBytes?: number;
     percent?: number;
   } | null>(null);
+  const qwenModel = chatModel.trim().toLowerCase().startsWith("qwen3");
 
   /** Broadcasts provider health so the application header stays in sync. */
   const broadcastHealth = (provider: ModelProvider, result: { ok: boolean; error?: string } | null) => {
@@ -131,6 +133,7 @@ export const ModelSettings: React.FC = () => {
         setBaseUrl(configResponse.config.baseUrl);
         setHasSavedApiKey(configResponse.config.hasApiKey);
         setChatModel(configResponse.config.chatModel);
+        setEnableThinking(configResponse.config.enableThinking ?? true);
       }
       const nextProvider = settingsResponse.settings.modelProvider
         ?? (configResponse.config && !isLocalInferenceEndpoint(configResponse.config.baseUrl) ? "remote" : "local");
@@ -198,6 +201,7 @@ export const ModelSettings: React.FC = () => {
       chatModel,
       temperature: 0.3,
       maxTokens: 1000,
+      ...(qwenModel ? { enableThinking } : {}),
       ...(apiKey ? { apiKey } : {}),
     });
     if (apiKey) {
@@ -771,6 +775,20 @@ export const ModelSettings: React.FC = () => {
                 sx={{ ...fieldInput, fontFamily: tokens.font.family }}
               />
             </Box>
+            {qwenModel && (
+              <Box component="label" sx={{ display: "flex", alignItems: "flex-start", gap: 1, cursor: "pointer" }}>
+                <input
+                  aria-label="启用深度思考"
+                  type="checkbox"
+                  checked={enableThinking}
+                  onChange={(event) => setEnableThinking(event.target.checked)}
+                />
+                <Box>
+                  <Typography sx={{ fontSize: 12, fontWeight: 600 }}>启用深度思考</Typography>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, color: tokens.color.text.tertiary }}>关闭可减少 Qwen 混合思考的回复等待时间</Typography>
+                </Box>
+              </Box>
+            )}
           </Stack>
 
           <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap", gap: 1.5 }}>

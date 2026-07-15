@@ -193,6 +193,7 @@ describe("ResponsesAgentWorkflow", () => {
     expect(invokeModel.mock.calls[1]?.[0]).toMatchObject({
       previousResponseId: "resp-1",
       input: [expect.objectContaining({ type: "function_call_output", call_id: "call-1" })],
+      tools: [],
     });
   });
 
